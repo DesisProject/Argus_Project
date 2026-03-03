@@ -1,0 +1,252 @@
+Design a modern, professional SaaS web application called:
+
+"Argus – Risk-Aware Decision & Event Impact Simulator"
+
+Target users:
+Startup founders, CFOs, and early-stage decision-makers.
+
+The product should look like:
+Stripe, Linear, Notion, or modern fintech dashboards.
+Clean, minimal, high-trust, data-driven design.
+Light mode default with subtle shadows and rounded cards.
+Use modern typography (Inter-style).
+
+Create the following pages:
+
+PAGE 1 — Financial Model Dashboard
+
+Purpose:
+Allow users to model baseline financial state.
+
+Layout:
+
+Left Sidebar Panel titled:
+"Company Financial Model"
+
+Include input fields:
+
+Starting Cash
+
+Monthly Revenue
+
+Revenue Growth %
+
+Fixed Costs
+
+Variable Cost %
+
+Payroll
+
+Include a prominent "Run Simulation" button.
+
+Main Area:
+
+At the top, display 3 large KPI cards:
+
+Current Cash
+
+Monthly Burn
+
+Runway (in months)
+
+Runway card color logic:
+
+Green if >12 months
+
+Yellow if 6–12 months
+
+Red if <6 months
+
+Below KPI cards:
+Large line chart titled:
+"Cash Projection Over Time"
+
+Graph requirements:
+
+X-axis: Months
+
+Y-axis: Cash Balance
+
+Include horizontal red line at 0 (insolvency threshold)
+
+Smooth modern line style
+
+Below graph:
+Optional expandable monthly data table.
+
+Design should be clean and minimal.
+
+PAGE 2 — Scenario Builder
+
+Purpose:
+Allow users to define internal decisions and external events.
+
+Page Title:
+"Create Scenario"
+
+Layout:
+
+Left Column:
+Decision Library (card-style tiles)
+Include:
+
+Hire Employees
+
+Marketing Campaign
+
+Demand Shock
+
+Reduce Costs
+
+Delay Fundraising
+
+Expand to New Market
+
+Right Column:
+Decision Configuration Panel
+
+Fields:
+
+Impact Amount
+
+Start Month
+
+Lag (months)
+
+Ramp (months)
+
+Duration (months or permanent)
+
+Include:
+"Add to Scenario" button
+
+Below configuration:
+Timeline visualization (12-month horizontal view)
+
+Show:
+
+Months labeled
+
+Highlight effect start
+
+Visually show ramp increase
+
+Color-coded impact intensity
+
+Below timeline:
+Section titled "Active Decisions"
+Each decision displayed as editable card:
+
+Decision name
+
+Impact summary
+
+Start month
+
+Edit and Delete icons
+
+Design should feel interactive and intuitive like a product planning tool.
+
+PAGE 3 — Scenario Comparison & Uncertainty
+
+Purpose:
+Compare Best / Expected / Worst cases.
+
+Page Title:
+"Scenario Comparison"
+
+Top Section:
+Variant selector buttons:
+
+Best Case
+
+Expected Case
+
+Worst Case
+
+Main Section:
+Large multi-line graph titled:
+"Cash Under Uncertainty"
+
+Graph requirements:
+
+Blue line: Best
+
+Yellow line: Expected
+
+Red line: Worst
+
+Horizontal red insolvency line
+
+Hover tooltips with month + cash value
+
+Below graph:
+Comparison table with columns:
+
+Variant
+
+Minimum Cash
+
+Runway
+
+Insolvency Risk
+
+Resilience Grade
+
+Below table:
+"Risk Drivers" panel listing:
+
+Hiring increased payroll
+
+Demand shock reduced revenue
+
+Fundraising delay created cash gap
+
+Include:
+Interactive slider labeled:
+"Demand Shock Severity"
+
+Slider should dynamically adjust graph preview.
+
+GLOBAL DESIGN SYSTEM
+
+Use:
+
+Soft neutral background
+
+Rounded 12px cards
+
+Subtle shadows
+
+Clear spacing and layout grid
+
+Modern SaaS feel
+
+Clean typography hierarchy
+
+Minimal clutter
+
+Color palette:
+Primary: Deep Blue
+Success: Green
+Warning: Amber
+Danger: Red
+Neutral: Gray scale
+
+Make layout responsive for desktop.
+Focus on clarity and decision support.
+Keep design professional and investor-ready.
+
+END PROMPT
+
+🚀 What This Will Generate
+
+Figma AI should produce:
+
+Full dashboard
+
+Scenario builder interface
+
+Comparison view
+
+Clean product-level UI
