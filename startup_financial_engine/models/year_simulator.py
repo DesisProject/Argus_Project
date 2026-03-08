@@ -16,10 +16,9 @@ class YearSimulator:
 
         income = IncomeStatement(revenue, cogs, fixed_exp)
         statement = income.compute()
-
-
         return statement
-    def apply_growth(base_assumptions, forecast_assumptions):
+    
+def apply_growth(base_assumptions, forecast_assumptions):
         from copy import deepcopy
 
         new_assumptions = deepcopy(base_assumptions)
