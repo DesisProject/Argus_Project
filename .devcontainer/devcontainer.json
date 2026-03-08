@@ -1,20 +1,10 @@
 {
-  "name": "Argus Django (Postgres)",
+  "name": "Argus FastAPI (Postgres)",
   "dockerComposeFile": ["../docker-compose.yml"],
   "service": "app",
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/workspace/startup_financial_engine",
   "runServices": ["db"],
   "shutdownAction": "stopCompose",
   "forwardPorts": [8000, 5432],
-  "postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt",
-  "postStartCommand": "bash -lc \"python - <<'PY'\\nimport socket, time\\nfor i in range(30):\\n  try:\\n    s=socket.socket(); s.connect(('db',5432)); s.close(); print('db reachable'); break\\n  except Exception:\\n    time.sleep(1)\\nelse:\\n  print('db not reachable after 30s')\\nPY\\npython manage.py makemigrations --noinput || true\\npython manage.py migrate --noinput || true\"",
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "ms-python.python",
-        "ms-azuretools.vscode-docker",
-        "batisteo.vscode-django"
-      ]
-    }
-  }
+  "postCreateCommand": "pip install -r requirements.txt"
 }
