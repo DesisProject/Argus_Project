@@ -33,3 +33,23 @@ export const logoutUser = () => {
 export const getToken = () => {
     return localStorage.getItem("token");
 };
+
+// Add this right below your existing loginUser function in auth.ts
+
+export const registerUser = async (email: string, password: string) => {
+    const response = await fetch(`${API_BASE_URL}/register`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        // Notice register uses JSON, unlike login which used form data!
+        body: JSON.stringify({ email, password }), 
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Registration failed. Email might already exist.");
+    }
+
+    return await response.json();
+};
