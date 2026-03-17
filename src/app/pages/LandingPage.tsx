@@ -1,14 +1,5 @@
-import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
 import {
   TrendingUp,
   Layers,
@@ -22,20 +13,6 @@ import { Card, CardContent } from "../components/ui/card";
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const [showSignIn, setShowSignIn] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  const handleSignIn = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simulate sign-in
-    navigate("/dashboard");
-  };
-
-  const handleCreateAccount = () => {
-    // Simulate account creation and navigate to dashboard
-    navigate("/dashboard");
-  };
 
   const features = [
     {
@@ -136,7 +113,7 @@ export function LandingPage() {
               </a>
               <Button
                 variant="ghost"
-                onClick={() => setShowSignIn(true)}
+                onClick={() => navigate('/login')}
                 className="text-slate-300 hover:text-white hover:bg-slate-800"
               >
                 Sign In
@@ -227,14 +204,14 @@ export function LandingPage() {
 
               <div className="flex items-center gap-4">
                 <Button
-                  onClick={handleCreateAccount}
+                  onClick={() => navigate('/signup')}
                   className="bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white px-8 py-6 text-lg rounded-full shadow-lg"
                 >
                   Create Account
                   <ChevronRight className="w-5 h-5 ml-2" />
                 </Button>
                 <Button
-                  onClick={() => setShowSignIn(true)}
+                  onClick={() => navigate('/login')}
                   variant="ghost"
                   className="text-slate-300 hover:text-white hover:bg-slate-800 px-8 py-6 text-lg rounded-full"
                 >
@@ -415,7 +392,7 @@ export function LandingPage() {
             Join hundreds of founders using Argus to model risk and optimize runway.
           </p>
           <Button
-            onClick={handleCreateAccount}
+            onClick={() => navigate('/signup')}
             className="bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white px-8 py-6 text-lg rounded-full shadow-lg"
           >
             Start Free Trial
@@ -440,55 +417,6 @@ export function LandingPage() {
           </div>
         </div>
       </footer>
-
-      {/* Sign In Modal */}
-      <Dialog open={showSignIn} onOpenChange={setShowSignIn}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl">Welcome back</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSignIn} className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              Sign In
-            </Button>
-            <div className="text-center text-sm text-slate-600">
-              Don't have an account?{" "}
-              <button
-                type="button"
-                onClick={handleCreateAccount}
-                className="text-blue-600 hover:underline"
-              >
-                Create one
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
