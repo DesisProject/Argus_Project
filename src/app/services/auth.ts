@@ -1,9 +1,6 @@
-// src/services/auth.ts
-
-const API_BASE_URL = "http://localhost:8000/api"; // Your FastAPI URL
+const API_BASE_URL = "http://localhost:8000/api";
 
 export const loginUser = async (email: string, password: string) => {
-    // FastAPI's OAuth2PasswordRequestForm expects data as form-urlencoded, not JSON
     const formData = new URLSearchParams();
     formData.append("username", email);
     formData.append("password", password);
@@ -21,20 +18,9 @@ export const loginUser = async (email: string, password: string) => {
     }
 
     const data = await response.json();
-    // Save the ticket!
     localStorage.setItem("token", data.access_token);
     return data;
 };
-
-export const logoutUser = () => {
-    localStorage.removeItem("token");
-};
-
-export const getToken = () => {
-    return localStorage.getItem("token");
-};
-
-// Add this right below your existing loginUser function in auth.ts
 
 export const registerUser = async (email: string, password: string) => {
     const response = await fetch(`${API_BASE_URL}/register`, {
@@ -42,7 +28,6 @@ export const registerUser = async (email: string, password: string) => {
         headers: {
             "Content-Type": "application/json",
         },
-        // Notice register uses JSON, unlike login which used form data!
         body: JSON.stringify({ email, password }), 
     });
 
@@ -52,4 +37,12 @@ export const registerUser = async (email: string, password: string) => {
     }
 
     return await response.json();
+};
+
+export const logoutUser = () => {
+    localStorage.removeItem("token");
+};
+
+export const getToken = () => {
+    return localStorage.getItem("token");
 };
