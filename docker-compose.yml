@@ -1,0 +1,29 @@
+version: "3.9"
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/python:3.11
+    volumes:
+      - ./:/workspace:cached
+    working_dir: /workspace/startup_financial_engine   
+    command: sleep infinity
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: argus_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

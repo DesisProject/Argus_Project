@@ -1,11 +1,17 @@
 
-  # App design
+# App design
 
-  This is a code bundle for App design. The original project is available at https://www.figma.com/design/LvBrVgKLx6b82jpYRNVmrT/App-design.
+This is a code bundle for App design. The original project is available at https://www.figma.com/design/LvBrVgKLx6b82jpYRNVmrT/App-design.
 
-  ## Running the code
+# Running the project
 
-  Run `npm i` to install the dependencies.
+## Backend (Python)
+cd startup_financial_engine
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn api:app --reload --port 8000
 
-  Run `npm run dev` to start the development server.
-  
+## Frontend (TypeScript/Vite)
+npm install
+npm run dev
