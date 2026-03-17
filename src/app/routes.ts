@@ -8,20 +8,37 @@ import { RedirectToScenarioBuilder } from "./components/RedirectToScenarioBuilde
 import { RedirectToScenarioComparison } from "./components/RedirectToScenarioComparison";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
+// Import our new security components
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { LoginForm } from "./components/LoginForm";
+
 export const router = createBrowserRouter([
+  // 1. Public Route: Everyone can see the Landing Page
   {
     path: "/",
     Component: LandingPage,
     ErrorBoundary: ErrorBoundary,
   },
+  // 2. Public Route: The Login/Signup Screen
+  {
+    path: "/login",
+    Component: LoginForm, 
+  },
+  // 3. Protected Routes: Locked behind the Bouncer
   {
     path: "/dashboard",
-    Component: Layout,
+    Component: ProtectedRoute, // <--- The Bouncer is placed here
     ErrorBoundary: ErrorBoundary,
     children: [
-      { index: true, Component: FinancialDashboard },
-      { path: "scenario-builder", Component: ScenarioBuilder },
-      { path: "scenario-comparison", Component: ScenarioComparison },
+      {
+        path: "", // This empty path applies the Layout to all children
+        Component: Layout,
+        children: [
+          { index: true, Component: FinancialDashboard },
+          { path: "scenario-builder", Component: ScenarioBuilder },
+          { path: "scenario-comparison", Component: ScenarioComparison },
+        ]
+      }
     ],
   },
   // Redirect old paths to new dashboard paths
