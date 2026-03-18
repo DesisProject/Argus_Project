@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
 from models.assumptions import StartupAssumptions
 from models.forecast import ForecastAssumptions
 from models.year_simulator import YearSimulator, apply_growth
