@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://bookish-orbit-q7p4v54j696gh9j6w-8000.app.github.dev/";
+const API_BASE_URL = "https://bookish-orbit-q7p4v54j696gh9j6w-8000.app.github.dev/api";
 
 
 export const loginUser = async (email: string, password: string) => {
