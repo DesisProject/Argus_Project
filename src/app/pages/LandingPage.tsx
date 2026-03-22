@@ -108,9 +108,9 @@ export function LandingPage() {
               <a href="#product" className="text-slate-300 hover:text-white transition-colors">
                 Product
               </a>
-              <a href="#pricing" className="text-slate-300 hover:text-white transition-colors">
+              {/* <a href="#pricing" className="text-slate-300 hover:text-white transition-colors">
                 Pricing
-              </a>
+              </a> */}
               <Button
                 variant="ghost"
                 onClick={() => navigate('/login')}
@@ -219,7 +219,7 @@ export function LandingPage() {
                 </Button>
               </div>
 
-              <div className="flex items-center gap-8 pt-4 text-sm text-slate-400">
+              {/* <div className="flex items-center gap-8 pt-4 text-sm text-slate-400">
                 <div className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-teal-400" />
                   <span>No credit card required</span>
@@ -228,7 +228,7 @@ export function LandingPage() {
                   <Check className="w-4 h-4 text-teal-400" />
                   <span>14-day free trial</span>
                 </div>
-              </div>
+              </div> */}
             </div>
           </div>
         </div>
@@ -395,7 +395,7 @@ export function LandingPage() {
             onClick={() => navigate('/signup')}
             className="bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white px-8 py-6 text-lg rounded-full shadow-lg"
           >
-            Start Free Trial
+            Start 
             <ChevronRight className="w-5 h-5 ml-2" />
           </Button>
         </div>
