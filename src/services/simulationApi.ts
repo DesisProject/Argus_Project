@@ -31,18 +31,26 @@ export interface SimulationResponse {
   year3: MonthData[];
 }
 
-const API_BASE = "";
+const API_BASE = "http://localhost:8000";
 
 export async function runSimulation(
   request: SimulationRequest
 ): Promise<SimulationResponse> {
+  const token = localStorage.getItem("token");
+
   const response = await fetch(`${API_BASE}/api/simulate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}` // Ensure this is here from our previous fix!
+    },
     body: JSON.stringify(request),
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+       throw new Error("Session expired. Please log in again.");
+    }
     throw new Error(`Simulation failed: ${response.statusText}`);
   }
 
