@@ -8,6 +8,9 @@ from sqlalchemy import engine_from_config, pool
 from config import DATABASE_URL
 from database import Base
 from models.user import User  # noqa: F401
+from models.scenario import Scenario  # noqa: F401
+from models.scenario_decision import ScenarioDecision  # noqa: F401
+from models.simulation_run import SimulationRun  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)

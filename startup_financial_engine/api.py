@@ -17,9 +17,6 @@ from auth import verify_password, get_password_hash, create_access_token, SECRET
 from event_calculators import apply_event_wrapper
 from main import calculate_cash_metrics
 
-# Create the tables in the database (Run once)
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
