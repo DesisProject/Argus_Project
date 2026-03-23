@@ -1,8 +1,6 @@
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
-
 from database import Base
-
 
 class User(Base):
     __tablename__ = "users"
@@ -24,3 +22,7 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+# --- ADD THESE AT THE BOTTOM ---
+from models.scenario import Scenario
+from models.simulation_run import SimulationRun

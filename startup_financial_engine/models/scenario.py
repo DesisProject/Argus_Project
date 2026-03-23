@@ -34,3 +34,6 @@ class Scenario(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+# CRITICAL: Import related models at the bottom to register them with Base
+from models.scenario_decision import ScenarioDecision
+from models.simulation_run import SimulationRun

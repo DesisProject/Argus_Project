@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 import jwt
@@ -40,7 +40,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 # Pydantic Schemas
 class UserCreate(BaseModel):
     email: str
-    password: str
+    password: str= Field(..., max_length=72)
 
 class Token(BaseModel):
     access_token: str
