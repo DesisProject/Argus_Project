@@ -79,25 +79,16 @@ export function FinancialDashboard() {
         fixed_expense_growth_rate: 0,
       });
 
-      const allMonths = [
-        ...result.year1,
-        ...result.year2.map((d) => ({ ...d, month: d.month + 12 })),
-        ...result.year3.map((d) => ({ ...d, month: d.month + 24 })),
-      ];
-
-      let cash = inputs.startingCash;
-      const data: MonthData[] = allMonths.map((d) => {
+      const data: MonthData[] = result.baseline.map((d) => {
         const costs = Math.round(d.revenue - d.operating_income);
         const burn = Math.round(-d.operating_income);
-        const row: MonthData = {
+        return {
           month: d.month,
-          cash: Math.round(cash),
+          cash: Math.round(d.cash_balance ?? 0),
           revenue: Math.round(d.revenue),
           costs,
           burn,
         };
-        cash += d.operating_income;
-        return row;
       });
 
       setSimulationData(data);
