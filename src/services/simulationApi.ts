@@ -122,6 +122,14 @@ export async function listScenarios(): Promise<Scenario[]> {
   return readJsonOrThrow<Scenario[]>(response);
 }
 
+export async function getScenario(scenarioId: number): Promise<Scenario> {
+  const response = await fetch(`${API_BASE}/scenarios/${scenarioId}`, {
+    headers: buildAuthHeaders(),
+  });
+
+  return readJsonOrThrow<Scenario>(response);
+}
+
 export async function createScenario(payload: ScenarioPayload): Promise<Scenario> {
   const response = await fetch(`${API_BASE}/scenarios`, {
     method: "POST",
