@@ -65,6 +65,9 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
     elif event == "reduce":
         calculate_cost_reduction_impact(timeline_map, event_payload)
 
+    elif event == "inventory":
+        calculate_inventory_impact(timeline_map, event_payload)
+
 def calculate_marketing_impact(timeline_map, payload):
     """Simple math for marketing campaigns."""
     start_month = payload.get("startMonth", 1)
@@ -85,5 +88,25 @@ def calculate_cost_reduction_impact(timeline_map, payload):
     for month_index in range(len(timeline_map["EXPECTED"])):
         if month_index + 1 >= start_month:
             for timeline in timeline_map.values():
+                timeline[month_index]["operating_income"] += savings
+                timeline[month_index]["net_cash_flow"] += savings
+
+def calculate_inventory_impact(timeline_map, payload):
+    start_month = payload.get("startMonth", 1)
+    upfront = payload.get("upfront_cost", 0)
+    savings = abs(payload.get("impact", 0))
+
+    for month_index in range(len(timeline_map["EXPECTED"])):
+        current_month = month_index + 1
+
+        for timeline in timeline_map.values():
+
+            # Apply upfront cost only once
+            if current_month == start_month:
+                timeline[month_index]["operating_income"] -= upfront
+                timeline[month_index]["net_cash_flow"] -= upfront
+
+            # Apply savings AFTER purchase
+            if current_month > start_month:
                 timeline[month_index]["operating_income"] += savings
                 timeline[month_index]["net_cash_flow"] += savings
