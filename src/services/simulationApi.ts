@@ -1,3 +1,5 @@
+import { ScenarioPayload, ScenarioDecisionPayload } from "../types/index"; // Adjust the import path as needed
+
 export interface SimulationRequest {
   price_per_unit: number;
   monthly_unit_sales: number[];

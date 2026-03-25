@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 import {
   LineChart,
   Line,
@@ -21,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Shield } from "lucide-react";
 import { runSimulation as callApi } from "../../services/simulationApi";
 
 
@@ -178,6 +179,8 @@ export function FinancialDashboard() {
       // 3. Map both timelines into the simulationData state
       const data: MonthData[] = baselineTimeline.map((d: any, idx: number) => {
         const s = scenarioTimeline[idx];
+        const costs = Math.round(d.total_costs || 0);
+        const burn = Math.round(d.operating_income < 0 ? Math.abs(d.operating_income) : 0);
         const row = {
           month: d.month,
           cash: Math.round(currentBaselineCash),

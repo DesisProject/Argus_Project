@@ -30,9 +30,28 @@ import {
   listScenarios,
   updateScenario,
   type Scenario,
-  type ScenarioDecisionPayload,
-  type ScenarioPayload,
 } from "../../services/simulationApi";
+
+interface ScenarioWithDetails extends Scenario {
+  name: string;
+  description?: string;
+}
+
+interface ScenarioDecisionPayload {
+  type: string;
+  name: string;
+  impact: number;
+  start_month: number;
+  lag_months?: number;
+  ramp_months?: number;
+  duration_months?: number | null;
+}
+
+interface ScenarioPayload {
+  name: string;
+  description: string | null;
+  decisions: ScenarioDecisionPayload[];
+}
 
 interface Decision {
   id: string;
@@ -156,9 +175,11 @@ export function ScenarioBuilder() {
   const [scenarioName, setScenarioName] = useState("");
   const [scenarioDescription, setScenarioDescription] = useState("");
   const [activeScenarioId, setActiveScenarioId] = useState<number | null>(null);
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [scenarios, setScenarios] = useState<ScenarioWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeScenarioId, setActiveScenarioId] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   
   const [config, setConfig] = useState({
     impact: 0,
@@ -167,6 +188,46 @@ export function ScenarioBuilder() {
     ramp: 1,
     duration: "permanent",
   });
+  const activeScenario = scenarios.find((s) => s.id === activeScenarioId) || null;
+
+  const refreshScenarios = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch("http://localhost:8000/api/scenarios", {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setScenarios(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to refresh scenarios:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setScenarioName("");
+    setScenarioDescription("");
+    setDecisions([]);
+    setSelectedType(null);
+    setActiveScenarioId(null);
+    setError(null);
+    setSuccess(null);
+  };
+
+  const loadScenarioIntoEditor = (scenario: ScenarioWithDetails) => {
+    setActiveScenarioId(scenario.id);
+    setScenarioName(scenario.name);
+    setScenarioDescription(scenario.description || "");
+    setDecisions(
+      (scenario.decisions || []).map((d: ScenarioDecisionPayload & { id?: number }) => fromApiDecision(d))
+    );
+    setSelectedType(null);
+    setError(null);
+    setSuccess(null);
+  };
+
   // FETCH: Load from DB on refresh
  useEffect(() => {
   const loadDecisions = async () => {
@@ -181,6 +242,7 @@ export function ScenarioBuilder() {
     setLoading(false);
   };
   loadDecisions();
+  refreshScenarios();
 }, []);
 
 
@@ -366,7 +428,7 @@ const applyQuickStressTest = async () => {
           : await updateScenario(activeScenarioId, payload);
 
       await refreshScenarios();
-      loadScenarioIntoEditor(saved);
+      loadScenarioIntoEditor(saved as ScenarioWithDetails);
       setSuccess(activeScenarioId === null ? "Scenario created" : "Scenario updated");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save scenario");
