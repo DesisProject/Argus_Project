@@ -17,11 +17,9 @@ class YearSimulator:
         income = IncomeStatement(revenue, cogs, fixed_exp)
         statement = income.compute()
 
-        # --- SHREYA'S FIX: Explicitly calculate Net Cash Flow ---
         for month_data in statement:
-            # Cash In - Cash Out (Ignores non-cash items like depreciation)
-            month_data["net_cash_flow"] = month_data["revenue"] - month_data["cogs"] - fixed_exp
-
+        # Cash In - Cash Out (Revenue - COGS - Fixed Expenses)
+         month_data["net_cash_flow"] = month_data["revenue"] - month_data["cogs"] - fixed_exp
         return statement
 
 def apply_growth(base_assumptions, forecast_assumptions):

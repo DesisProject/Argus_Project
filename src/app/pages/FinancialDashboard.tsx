@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -22,7 +22,8 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
-import { runSimulation as callApi } from "../../services/simulationApi";
+
+import { runSimulation as callApi, listSimulationRuns } from "../../services/simulationApi";
 
 interface FinancialInputs {
   startingCash: number;
@@ -56,25 +57,65 @@ export function FinancialDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const runSimulation = async () => {
+  useEffect(() => {
+    const fetchLastRun = async () => {
+      setLoading(true);
+      try {
+        // This endpoint returns the user's history from the DB
+        const response = await fetch("http://localhost:8000/api/simulation-runs", {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure you are sending the auth token
+          }
+        });
+        const runs = await response.json();
+
+        if (runs && runs.length > 0) {
+          const lastRun = runs[0].inputs; // Get the most recent run
+          
+          const savedInputs = {
+            startingCash: lastRun.owner_equity,
+            monthlyRevenue: lastRun.monthly_unit_sales[0],
+            revenueGrowth: lastRun.revenue_growth_rate * 100,
+            fixedCosts: lastRun.rent,
+            variableCostPercent: lastRun.cost_per_unit * 100,
+            payroll: lastRun.payroll,
+          };
+
+          setInputs(savedInputs);
+          // Automatically run the simulation with these saved values
+          runSimulation(savedInputs); 
+        }
+      } catch (err) {
+        console.log("No previous simulation found in database.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLastRun();
+  }, []);
+  
+
+  const runSimulation = async (overrideInputs?: FinancialInputs) => {
+    const currentInputs = overrideInputs || inputs;
     setLoading(true);
     setError(null);
     try {
       const result = await callApi({
         price_per_unit: 1,
-        monthly_unit_sales: Array(12).fill(Math.round(inputs.monthlyRevenue)),
-        cost_per_unit: inputs.variableCostPercent / 100,
-        rent: inputs.fixedCosts,
-        payroll: inputs.payroll,
+        monthly_unit_sales: Array(12).fill(Math.round(currentInputs.monthlyRevenue)),
+        cost_per_unit: currentInputs.variableCostPercent / 100,
+        rent: currentInputs.fixedCosts,
+        payroll: currentInputs.payroll,
         marketing: 0,
         utilities: 0,
         equipment_cost: 0,
         buildout_cost: 0,
-        owner_equity: inputs.startingCash,
+        owner_equity: currentInputs.startingCash,
         loan_amount: 0,
         loan_interest_rate: 0,
         equipment_life_years: 5,
-        revenue_growth_rate: inputs.revenueGrowth / 100,
+        revenue_growth_rate: currentInputs.revenueGrowth / 100,
         cost_growth_rate: 0,
         fixed_expense_growth_rate: 0,
       });
@@ -85,16 +126,14 @@ export function FinancialDashboard() {
         ...result.year3.map((d) => ({ ...d, month: d.month + 24 })),
       ];
 
-      let cash = inputs.startingCash;
-      const data: MonthData[] = allMonths.map((d) => {
-        const costs = Math.round(d.revenue - d.operating_income);
-        const burn = Math.round(-d.operating_income);
-        const row: MonthData = {
+      let cash = currentInputs.startingCash;
+      const data: MonthData[] = allMonths.map((d: any) => {
+        const row = {
           month: d.month,
           cash: Math.round(cash),
           revenue: Math.round(d.revenue),
-          costs,
-          burn,
+          costs: Math.round(d.revenue - d.operating_income),
+          burn: Math.round(-d.operating_income),
         };
         cash += d.operating_income;
         return row;
@@ -220,7 +259,7 @@ export function FinancialDashboard() {
             </div>
 
             <Button
-              onClick={runSimulation}
+              onClick={() => runSimulation()}
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             >

@@ -118,10 +118,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 # --- UPDATED SIMULATION ROUTE ---
 @app.post("/api/simulate")
-def simulate(request: SimulationRequest, current_user: User = Depends(get_current_user)):
+def simulate(request: SimulationRequest, current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     from models.assumptions import StartupAssumptions
     from models.forecast import ForecastAssumptions
-    from models.year_simulator import YearSimulator, apply_growth
+    from year_simulator import YearSimulator, apply_growth
+    from models.simulation_run import SimulationRun
 
     # 1. Map Assumptions
     base = StartupAssumptions(
@@ -178,9 +179,25 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
 
+    simulation_run = SimulationRun(
+        user_id=current_user.id,
+        inputs=request.dict(),
+        result={
+            "baseline": baseline_timeline,
+            "best": best_timeline,
+            "expected": expected_timeline,
+            "worst": worst_timeline
+        },
+    )
+    db.add(simulation_run)
+    db.commit()
+
     return {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
+        "year1": baseline_timeline[0:12],
+        "year2": baseline_timeline[12:24],
+        "year3": baseline_timeline[24:36],
         "best": best_timeline,
         "expected": expected_timeline,
         "worst": worst_timeline
