@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Slider } from "../components/ui/slider";
 import { Checkbox } from "../components/ui/checkbox";
+import { ShieldCheck, Lightbulb } from "lucide-react";
+import { generateMitigations } from "../services/mitigationEngine";
+import { AlertCircle} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
+import { detectEarlyRisks } from "../services/riskDetector";
 import {
   LineChart,
   Line,
@@ -59,13 +64,13 @@ export function ScenarioComparison() {
     for (let month = 0; month <= 24; month++) {
       // Baseline - no optimism or pessimism adjustments
       let baselineCash = startingCash + month * 3000 - month * 1500;
-      
+
       // Best case scenario - optimistic revenue, lower costs
       let bestCash = startingCash + month * 18000 - month * 2000;
-      
+
       // Expected case scenario - realistic projections
       let expectedCash = startingCash + month * 8000 - month * 5000;
-      
+
       // Worst case scenario - affected by demand shock
       let worstCash = startingCash - month * 8000 * (1 + severityFactor);
 
@@ -182,6 +187,20 @@ export function ScenarioComparison() {
       delta: null,
     },
   ];
+  const mitigations = useMemo(() => {
+    return generateMitigations(
+      scenarioData.map(d => ({ cash_balance: d.expected })),
+      scenarioData.map(d => ({ cash_balance: d.worst }))
+    );
+  }, [scenarioData]);
+
+  const riskSignals = useMemo(() => {
+  // Comparing "Expected" or "Worst" case against the "Baseline"
+  return detectEarlyRisks(
+    scenarioData.map(d => ({ cash_balance: d.baseline, operating_expenses: 5000 })), // Simplified expense for demo
+    scenarioData.map(d => ({ cash_balance: d.worst, operating_expenses: 8000 }))
+  );
+}, [scenarioData]);
 
   const riskDrivers = [
     {
@@ -211,7 +230,7 @@ export function ScenarioComparison() {
           Compare best, expected, and worst case scenarios under uncertainty
         </p>
       </div>
-
+      
       {/* Variant Selector */}
       <div className="flex gap-3">
         <Button
@@ -291,8 +310,8 @@ export function ScenarioComparison() {
                     name === "best"
                       ? "Best"
                       : name === "expected"
-                      ? "Expected"
-                      : "Worst",
+                        ? "Expected"
+                        : "Worst",
                   ]}
                   contentStyle={{
                     backgroundColor: "#1e293b",
@@ -308,8 +327,8 @@ export function ScenarioComparison() {
                     value === "best"
                       ? "Best Case"
                       : value === "expected"
-                      ? "Expected Case"
-                      : "Worst Case"
+                        ? "Expected Case"
+                        : "Worst Case"
                   }
                 />
                 <ReferenceLine
@@ -414,8 +433,8 @@ export function ScenarioComparison() {
                         row.resilienceGrade === "A" || row.resilienceGrade === "B"
                           ? "bg-green-900/30 text-green-400 border-green-600"
                           : row.resilienceGrade === "C"
-                          ? "bg-amber-900/30 text-amber-400 border-amber-600"
-                          : "bg-red-900/30 text-red-400 border-red-600"
+                            ? "bg-amber-900/30 text-amber-400 border-amber-600"
+                            : "bg-red-900/30 text-red-400 border-red-600"
                       }
                     >
                       {row.resilienceGrade}
@@ -464,12 +483,35 @@ export function ScenarioComparison() {
                       driver.impact === "Critical"
                         ? "destructive"
                         : driver.impact === "High"
-                        ? "secondary"
-                        : "outline"
+                          ? "secondary"
+                          : "outline"
                     }
                   >
                     {driver.impact}
                   </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-blue-900/30 bg-blue-950/10 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-blue-400" />
+              <CardTitle>Automated Mitigation & Recovery</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mitigations.map((sug, idx) => (
+                <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-slate-700">
+                  <h4 className="font-bold text-blue-400 mb-1">{sug.strategy}</h4>
+                  <p className="text-sm text-slate-100 mb-2">{sug.impact}</p>
+                  <div className="flex items-start gap-2 text-xs text-slate-400 italic">
+                    <ShieldCheck className="w-3 h-3 mt-0.5 text-amber-500" />
+                    <span>Trade-off: {sug.tradeOff}</span>
+                  </div>
                 </div>
               ))}
             </div>
