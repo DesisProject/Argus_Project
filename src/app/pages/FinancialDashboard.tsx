@@ -22,8 +22,8 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { runSimulation as callApi } from "../../services/simulationApi";
 
-import { runSimulation as callApi, listSimulationRuns } from "../../services/simulationApi";
 
 interface FinancialInputs {
   startingCash: number;
@@ -44,12 +44,12 @@ interface MonthData {
 
 export function FinancialDashboard() {
   const [inputs, setInputs] = useState<FinancialInputs>({
-    startingCash: 500000,
-    monthlyRevenue: 50000,
-    revenueGrowth: 10,
-    fixedCosts: 20000,
-    variableCostPercent: 30,
-    payroll: 40000,
+    startingCash: 0,
+    monthlyRevenue: 0,
+    revenueGrowth: 0,
+    fixedCosts: 0,
+    variableCostPercent: 0,
+    payroll: 0,
   });
 
   const [simulationData, setSimulationData] = useState<MonthData[]>([]);
@@ -57,44 +57,81 @@ export function FinancialDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Inside your FinancialDashboard component in src/app/pages/FinancialDashboard.tsx
+
+  // src/app/pages/FinancialDashboard.tsx
+
   useEffect(() => {
-    const fetchLastRun = async () => {
+    const fetchAndSimulate = async () => {
       setLoading(true);
       try {
-        // This endpoint returns the user's history from the DB
-        const response = await fetch("http://localhost:8000/api/simulation-runs", {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure you are sending the auth token
-          }
+        const token = localStorage.getItem('token');
+
+        // 1. Fetch Latest Financial Inputs
+        const inputRes = await fetch("http://localhost:8000/api/simulation/latest", {
+          headers: { 'Authorization': `Bearer ${token}` }
         });
-        const runs = await response.json();
+        const inputData = await inputRes.json();
 
-        if (runs && runs.length > 0) {
-          const lastRun = runs[0].inputs; // Get the most recent run
-          
+        // 2. Fetch Active Scenario Events
+        const scenarioRes = await fetch("http://localhost:8000/api/scenarios/active", {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const scenarioData = await scenarioRes.json();
+
+        if (inputData.inputs) {
           const savedInputs = {
-            startingCash: lastRun.owner_equity,
-            monthlyRevenue: lastRun.monthly_unit_sales[0],
-            revenueGrowth: lastRun.revenue_growth_rate * 100,
-            fixedCosts: lastRun.rent,
-            variableCostPercent: lastRun.cost_per_unit * 100,
-            payroll: lastRun.payroll,
+            startingCash: inputData.inputs.owner_equity,
+            monthlyRevenue: inputData.inputs.monthly_unit_sales[0],
+            revenueGrowth: inputData.inputs.revenue_growth_rate * 100,
+            fixedCosts: inputData.inputs.rent,
+            variableCostPercent: inputData.inputs.cost_per_unit * 100,
+            payroll: inputData.inputs.payroll,
           };
-
           setInputs(savedInputs);
-          // Automatically run the simulation with these saved values
-          runSimulation(savedInputs); 
+
+          // 3. Run simulation with inputs
+          runSimulation(savedInputs);
         }
       } catch (err) {
-        console.log("No previous simulation found in database.");
+        console.error("Initialization failed", err);
       } finally {
         setLoading(false);
       }
     };
-
-    fetchLastRun();
+    fetchAndSimulate();
   }, []);
-  
+
+
+  const handleDeleteHistory = async () => {
+    if (!window.confirm("Are you sure you want to clear your saved data?")) return;
+
+    try {
+      setLoading(true);
+      await fetch("http://localhost:8000/api/simulation-runs/all", {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      // Reset local state to empty
+      setInputs({
+        startingCash: 0,
+        monthlyRevenue: 0,
+        revenueGrowth: 0,
+        fixedCosts: 0,
+        variableCostPercent: 0,
+        payroll: 0,
+      });
+      setSimulationData([]);
+    } catch (err) {
+      setError("Failed to delete history");
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   const runSimulation = async (overrideInputs?: FinancialInputs) => {
     const currentInputs = overrideInputs || inputs;
@@ -378,6 +415,16 @@ export function FinancialDashboard() {
                         dataKey="cash"
                         stroke="#3b82f6"
                         strokeWidth={3}
+                        dot={false}
+                      />
+                      // Inside your LineChart in FinancialDashboard.tsx
+                      <Line
+                        type="monotone"
+                        dataKey="scenarioCash" // Calculated from result.expected
+                        stroke="#10b981" // Green color for scenario
+                        strokeWidth={3}
+                        strokeDasharray="5 5" // Dashed line to distinguish from baseline
+                        name="Scenario Projection"
                         dot={false}
                       />
                     </LineChart>

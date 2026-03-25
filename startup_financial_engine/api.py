@@ -159,7 +159,19 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
     
     baseline_timeline = year1 + year2 + year3
 
-    # 4. Branch Timelines for Scenarios
+
+    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+    db_decisions = scenario.decisions if scenario else []
+    scenario_timeline = copy.deepcopy(baseline_timeline)
+    # This ensures "Best/Expected/Worst" reflect your persistent events
+    for d in db_decisions:
+        # Example: Applying a hiring event to the timeline
+        apply_event_wrapper(
+            {"SCENARIO": scenario_timeline}, 
+            d.type, 
+            d.payload
+        )
+    
     best_timeline = copy.deepcopy(baseline_timeline)
     expected_timeline = copy.deepcopy(baseline_timeline)
     worst_timeline = copy.deepcopy(baseline_timeline)
@@ -175,6 +187,7 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
 
     # 6. Finalize Cash & Runway Metrics
     calculate_cash_metrics(baseline_timeline, starting_cash)
+    calculate_cash_metrics(scenario_timeline, starting_cash)
     calculate_cash_metrics(best_timeline, starting_cash)
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
@@ -184,6 +197,7 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
         inputs=request.dict(),
         result={
             "baseline": baseline_timeline,
+            "scenario": scenario_timeline,
             "best": best_timeline,
             "expected": expected_timeline,
             "worst": worst_timeline
@@ -191,6 +205,7 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
     )
     db.add(simulation_run)
     db.commit()
+
 
     return {
         "user_email": current_user.email,
@@ -202,6 +217,108 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
         "expected": expected_timeline,
         "worst": worst_timeline
     }
+
+
+# Add this route to your startup_financial_engine/api.py
+
+from models.simulation_run import SimulationRun
+
+@app.get("/api/simulation/latest")
+def get_latest_simulation(
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    # Retrieve the most recent simulation run for this specific user
+    last_run = db.query(SimulationRun)\
+                 .filter(SimulationRun.user_id == current_user.id)\
+                 .order_by(SimulationRun.created_at.desc())\
+                 .first()
+    
+    if not last_run:
+        return {"inputs": None}
+    
+    return {
+        "inputs": last_run.inputs,
+        "result": last_run.result
+    }
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+    # READ: Get the user's most recent simulation run
+    last_run = db.query(SimulationRun)\
+                 .filter(SimulationRun.user_id == current_user.id)\
+                 .order_by(SimulationRun.created_at.desc())\
+                 .first()
+    
+    if not last_run:
+        return {"inputs": None}
+    
+    return {
+        "id": last_run.id,
+        "inputs": last_run.inputs,
+        "result": last_run.result
+    }
+
+@app.delete("/api/simulation/{run_id}")
+def delete_simulation(
+    run_id: int, 
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    # DELETE: Remove a specific run from the database
+    run = db.query(SimulationRun).filter(
+        SimulationRun.id == run_id, 
+        SimulationRun.user_id == current_user.id
+    ).first()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+        
+    db.delete(run)
+    db.commit()
+    return {"status": "deleted"}
+
+# startup_financial_engine/api.py
+from models.scenario import Scenario
+from models.scenario_decision import ScenarioDecision
+
+@app.get("/api/scenarios/active/decisions")
+def get_active_decisions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Fetch the latest scenario or a default one for the user
+    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+    if not scenario:
+        return []
+    return scenario.decisions
+
+@app.post("/api/scenarios/decisions")
+def add_decision(decision_data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Ensure a scenario exists to attach the decision to
+    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+    if not scenario:
+        scenario = Scenario(user_id=current_user.id, name="Default Scenario")
+        db.add(scenario)
+        db.commit()
+        db.refresh(scenario)
+    
+    new_decision = ScenarioDecision(
+        scenario_id=scenario.id,
+        type=decision_data['type'],
+        payload=decision_data['payload'] # JSON containing date/cost
+    )
+    db.add(new_decision)
+    db.commit()
+    return new_decision
+
+@app.delete("/api/scenarios/decisions/{decision_id}")
+def delete_decision(decision_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    decision = db.query(ScenarioDecision).join(Scenario).filter(
+        ScenarioDecision.id == decision_id, 
+        Scenario.user_id == current_user.id
+    ).first()
+    if not decision:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    db.delete(decision)
+    db.commit()
+    return {"message": "Deleted"}
 
 if __name__ == "__main__":
     import uvicorn
