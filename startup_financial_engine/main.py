@@ -51,7 +51,8 @@ def run_multi_year():
     starting_cash = (base_assumptions.owner_equity + base_assumptions.loan_amount) - (base_assumptions.equipment_cost + base_assumptions.buildout_cost)
 
     # 2. Loading the Decision (With Delays!)
-    test_decision = InternalDecision(
+    # 1. Hiring
+    hiring_decision = InternalDecision(
         name="Hire Senior Sales Rep",
         start_month=6, 
         upfront_cost=5000, 
@@ -62,7 +63,35 @@ def run_multi_year():
             DecisionImpact(scenario_type="WORST", revenue_boost=1000, cost_change=1000, delay_months=2)
         ]
     )
-
+    # 2. Cost Reduction 
+    cost_cut_decision = InternalDecision( 
+        name="Reduce Vendor Costs", 
+        start_month=4, 
+        upfront_cost=2000, 
+        recurring_cost=0, 
+        impacts=[
+             DecisionImpact("BEST", 0, -2000, 1), 
+            DecisionImpact("EXPECTED", 0, -1500, 1), 
+             DecisionImpact("WORST", 0, -800, 2) 
+        ] 
+        )
+    
+    # 3. Inventory 
+    inventory_decision = InternalDecision(
+         name="Bulk Inventory Purchase", 
+         start_month=3, upfront_cost=10000, 
+         recurring_cost=0, 
+         impacts=[
+                 DecisionImpact("BEST", 0, -800, 0),
+                DecisionImpact("EXPECTED", 0, -500, 0),
+                  DecisionImpact("WORST", 0, -200, 0) 
+            ]
+        )
+    
+    decisions = [
+         hiring_decision, 
+         cost_cut_decision, 
+         inventory_decision ]
     # 3. Generate the 3-Year Baseline
     year1 = YearSimulator(base_assumptions).run_year()
     year2_assumptions = apply_growth(base_assumptions, forecast)
@@ -85,30 +114,31 @@ def run_multi_year():
     }
 
     # Apply the decision's financial impacts
-    for month_index in range(36):
-        current_month = month_index + 1 
-        
-        if current_month >= test_decision.start_month:
-            # A. Apply guaranteed costs to ALL timelines
-            for timeline in timeline_map.values():
-                timeline[month_index]["operating_income"] -= test_decision.recurring_cost
-                timeline[month_index]["net_cash_flow"] -= test_decision.recurring_cost
-                
-                # Upfront cost only hits on the exact start month
-                if current_month == test_decision.start_month:
-                    timeline[month_index]["operating_income"] -= test_decision.upfront_cost
-                    timeline[month_index]["net_cash_flow"] -= test_decision.upfront_cost
+    for decision in decisions: 
+        print(f"\n=== Applying Decision: {decision.name} ===")
 
-            # B. Apply uncertain impacts safely based on scenario type AND time delay
-            for impact in test_decision.impacts:
-                active_timeline = timeline_map.get(impact.scenario_type)
+        for month_index in range(36): 
+            current_month = month_index + 1 
+            if current_month >= decision.start_month: 
+                print(f"{decision.name} active at month {current_month}")
+                # Apply guaranteed costs 
+                for timeline in timeline_map.values(): 
+                    timeline[month_index]["operating_income"] -= decision.recurring_cost 
+                    timeline[month_index]["net_cash_flow"] -= decision.recurring_cost 
+                    
+                    if current_month == decision.start_month: 
+                        timeline[month_index]["operating_income"] -= decision.upfront_cost 
+                        timeline[month_index]["net_cash_flow"] -= decision.upfront_cost 
                 
-                # Calculate exactly when the revenue/cost changes should actually start
-                impact_start_month = test_decision.start_month + impact.delay_months
-                
-                if active_timeline and current_month >= impact_start_month:
-                    active_timeline[month_index]["operating_income"] += impact.revenue_boost - impact.cost_change
-                    active_timeline[month_index]["net_cash_flow"] += impact.revenue_boost - impact.cost_change
+                # Apply uncertain impacts 
+                for impact in decision.impacts: 
+                    active_timeline = timeline_map.get(impact.scenario_type) 
+                    impact_start = decision.start_month + impact.delay_months 
+                    
+                    if active_timeline and current_month >= impact_start: 
+                        delta = impact.revenue_boost - impact.cost_change 
+                        active_timeline[month_index]["operating_income"] += delta 
+                        active_timeline[month_index]["net_cash_flow"] += delta
 
     # Calculate Cash and Runway using the REAL cash flow
     calculate_cash_metrics(baseline_timeline, starting_cash)
@@ -117,13 +147,22 @@ def run_multi_year():
     calculate_cash_metrics(worst_timeline, starting_cash)
 
     # 5. Print the Results!
-    print(f"\n--- SIMULATION RESULTS: {test_decision.name} ---")
+    print(f"\n--- SIMULATION RESULTS: {hiring_decision.name} ---")
     print(f"Starting Cash: ${starting_cash:,.2f}\n")
     
     print(f"BASELINE: Ending Cash: ${baseline_timeline[-1]['cash_balance']:,.2f}")
     print(f"BEST:     Ending Cash: ${best_timeline[-1]['cash_balance']:,.2f}")
     print(f"EXPECTED: Ending Cash: ${expected_timeline[-1]['cash_balance']:,.2f}")
     print(f"WORST:    Ending Cash: ${worst_timeline[-1]['cash_balance']:,.2f}\n")
+
+    print("\n--- DEBUG (FIRST 6 MONTHS) ---")
+
+    for i in range(6):
+        print(f"\nMonth {i+1}")
+        print("BASELINE:", baseline_timeline[i]["net_cash_flow"])
+        print("BEST:    ", best_timeline[i]["net_cash_flow"])
+        print("EXPECTED:", expected_timeline[i]["net_cash_flow"])
+        print("WORST:   ", worst_timeline[i]["net_cash_flow"])
 
 if __name__ == "__main__":
     run_multi_year()
