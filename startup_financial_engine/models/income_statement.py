@@ -16,7 +16,8 @@ class IncomeStatement:
                 "revenue": self.revenue[i],
                 "cogs": self.cogs[i],
                 "gross_profit": gross_profit,
-                "operating_income": operating_income
+                "operating_income": operating_income,
+                "net_cash_flow": operating_income
             })
 
         return statement

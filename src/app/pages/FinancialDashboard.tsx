@@ -157,23 +157,16 @@ export function FinancialDashboard() {
         fixed_expense_growth_rate: 0,
       });
 
-      const allMonths = [
-        ...result.year1,
-        ...result.year2.map((d) => ({ ...d, month: d.month + 12 })),
-        ...result.year3.map((d) => ({ ...d, month: d.month + 24 })),
-      ];
-
-      let cash = currentInputs.startingCash;
-      const data: MonthData[] = allMonths.map((d: any) => {
-        const row = {
+      const data: MonthData[] = result.baseline.map((d) => {
+        const costs = Math.round(d.revenue - d.operating_income);
+        const burn = Math.round(-d.operating_income);
+        return {
           month: d.month,
-          cash: Math.round(cash),
+          cash: Math.round(d.cash_balance ?? 0),
           revenue: Math.round(d.revenue),
-          costs: Math.round(d.revenue - d.operating_income),
-          burn: Math.round(-d.operating_income),
+          costs,
+          burn,
         };
-        cash += d.operating_income;
-        return row;
       });
 
       setSimulationData(data);
@@ -417,13 +410,12 @@ export function FinancialDashboard() {
                         strokeWidth={3}
                         dot={false}
                       />
-                      // Inside your LineChart in FinancialDashboard.tsx
                       <Line
                         type="monotone"
-                        dataKey="scenarioCash" // Calculated from result.expected
-                        stroke="#10b981" // Green color for scenario
+                        dataKey="scenarioCash"
+                        stroke="#10b981"
                         strokeWidth={3}
-                        strokeDasharray="5 5" // Dashed line to distinguish from baseline
+                        strokeDasharray="5 5"
                         name="Scenario Projection"
                         dot={false}
                       />
