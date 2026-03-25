@@ -183,8 +183,8 @@ export function FinancialDashboard() {
           cash: Math.round(currentBaselineCash),
           scenarioCash: Math.round(currentScenarioCash), // Tracking scenario impact
           revenue: Math.round(d.revenue),
-          costs: Math.round(d.revenue - d.operating_income),
-          burn: Math.round(-d.operating_income),
+          costs,
+          burn,
         };
 
         currentBaselineCash += d.operating_income;
@@ -468,11 +468,10 @@ export function FinancialDashboard() {
                         strokeWidth={3}
                         dot={false}
                       />
-                      // Inside your LineChart in FinancialDashboard.tsx
                       <Line
                         type="monotone"
-                        dataKey="scenarioCash" // Calculated from result.expected
-                        stroke="#10b981" // Green color for scenario
+                        dataKey="scenarioCash"
+                        stroke="#10b981"
                         strokeWidth={3}
                         // strokeDasharray="5 5" // Dashed line to distinguish from baseline
                         name="Scenario Projection"

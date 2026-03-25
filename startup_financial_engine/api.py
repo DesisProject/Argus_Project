@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel,Field
@@ -11,6 +11,9 @@ import copy
 # Import your DB and Auth files
 from database import SessionLocal, engine, Base
 from models.user import User
+from models.scenario import Scenario
+from models.scenario_decision import ScenarioDecision
+from models.simulation_run import SimulationRun
 from auth import verify_password, get_password_hash, create_access_token, SECRET_KEY, ALGORITHM
 
 # --- NEW IMPORTS FOR SIMULATION LOGIC ---
@@ -68,6 +71,66 @@ class SimulationRequest(BaseModel):
     # --- NEW FIELDS FOR INTERNAL EVENTS ---
     event_type: Optional[str] = None
     event_payload: Optional[Dict[str, Any]] = None
+    scenario_id: Optional[int] = None
+
+
+class ScenarioDecisionIn(BaseModel):
+    type: str
+    name: str
+    impact: float
+    start_month: int
+    lag_months: int = 0
+    ramp_months: int = 1
+    duration_months: Optional[int] = None
+
+
+class ScenarioCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    decisions: List[ScenarioDecisionIn] = Field(default_factory=list)
+
+
+class ScenarioUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1)
+    description: Optional[str] = None
+    decisions: Optional[List[ScenarioDecisionIn]] = None
+
+
+def _serialize_decision(decision: ScenarioDecision) -> Dict[str, Any]:
+    return {
+        "id": decision.id,
+        "scenario_id": decision.scenario_id,
+        "type": decision.type,
+        "name": decision.name,
+        "impact": decision.impact,
+        "start_month": decision.start_month,
+        "lag_months": decision.lag_months,
+        "ramp_months": decision.ramp_months,
+        "duration_months": decision.duration_months,
+        "created_at": decision.created_at,
+    }
+
+
+def _serialize_scenario(scenario: Scenario) -> Dict[str, Any]:
+    return {
+        "id": scenario.id,
+        "name": scenario.name,
+        "description": scenario.description,
+        "created_at": scenario.created_at,
+        "updated_at": scenario.updated_at,
+        "decisions": [_serialize_decision(d) for d in sorted(scenario.decisions, key=lambda x: x.id)],
+    }
+
+
+def _get_user_scenario(db: Session, user_id: int, scenario_id: int) -> Scenario:
+    scenario = (
+        db.query(Scenario)
+        .filter(Scenario.id == scenario_id, Scenario.user_id == user_id)
+        .first()
+    )
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    return scenario
 
 # --- AUTHENTICATION ROUTES ---
 @app.post("/api/register")
@@ -118,11 +181,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 # --- UPDATED SIMULATION ROUTE ---
 @app.post("/api/simulate")
-def simulate(request: SimulationRequest, current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
+def simulate(
+    request: SimulationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     from models.assumptions import StartupAssumptions
     from models.forecast import ForecastAssumptions
-    from year_simulator import YearSimulator, apply_growth
-    from models.simulation_run import SimulationRun
+    from models.year_simulator import YearSimulator, apply_growth
 
     # 1. Map Assumptions
     base = StartupAssumptions(
@@ -201,27 +267,14 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
 
     # 6. Finalize Cash & Runway Metrics
     calculate_cash_metrics(baseline_timeline, starting_cash)
-    calculate_cash_metrics(scenario_timeline, starting_cash)
     calculate_cash_metrics(best_timeline, starting_cash)
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
 
-    simulation_run = SimulationRun(
-        user_id=current_user.id,
-        inputs=request.dict(),
-        result={
-            "baseline": baseline_timeline,
-            "scenario": scenario_timeline,
-            "best": best_timeline,
-            "expected": expected_timeline,
-            "worst": worst_timeline
-        },
-    )
-    db.add(simulation_run)
-    db.commit()
+    if request.scenario_id is not None:
+        _get_user_scenario(db, current_user.id, request.scenario_id)
 
-
-    return {
+    result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
         "year1": baseline_timeline[0:12],
@@ -235,50 +288,149 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
         "worst": worst_timeline
     }
 
+    request_payload = request.dict()
+    simulation_run = SimulationRun(
+        user_id=current_user.id,
+        scenario_id=request.scenario_id,
+        inputs=request_payload,
+        result=result_payload,
+    )
+    db.add(simulation_run)
+    db.commit()
+    db.refresh(simulation_run)
 
-# Add this route to your startup_financial_engine/api.py
+    result_payload["simulation_run_id"] = simulation_run.id
+    return result_payload
 
-from models.simulation_run import SimulationRun
+
+@app.get("/api/scenarios")
+def list_scenarios(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    scenarios = (
+        db.query(Scenario)
+        .filter(Scenario.user_id == current_user.id)
+        .order_by(Scenario.updated_at.desc())
+        .all()
+    )
+    return [_serialize_scenario(scenario) for scenario in scenarios]
+
+
+@app.post("/api/scenarios", status_code=201)
+def create_scenario(
+    payload: ScenarioCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    scenario = Scenario(
+        user_id=current_user.id,
+        name=payload.name.strip(),
+        description=payload.description,
+    )
+    db.add(scenario)
+    db.flush()
+
+    for decision in payload.decisions:
+        db.add(
+            ScenarioDecision(
+                scenario_id=scenario.id,
+                type=decision.type,
+                name=decision.name,
+                impact=decision.impact,
+                start_month=decision.start_month,
+                lag_months=decision.lag_months,
+                ramp_months=decision.ramp_months,
+                duration_months=decision.duration_months,
+            )
+        )
+
+    db.commit()
+    db.refresh(scenario)
+    return _serialize_scenario(scenario)
+
+
+@app.get("/api/scenarios/{scenario_id}")
+def get_scenario(
+    scenario_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    scenario = _get_user_scenario(db, current_user.id, scenario_id)
+    return _serialize_scenario(scenario)
+
+
+@app.put("/api/scenarios/{scenario_id}")
+def update_scenario(
+    scenario_id: int,
+    payload: ScenarioUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    scenario = _get_user_scenario(db, current_user.id, scenario_id)
+
+    if payload.name is not None:
+        scenario.name = payload.name.strip()
+    if payload.description is not None:
+        scenario.description = payload.description
+
+    if payload.decisions is not None:
+        db.query(ScenarioDecision).filter(ScenarioDecision.scenario_id == scenario.id).delete()
+        for decision in payload.decisions:
+            db.add(
+                ScenarioDecision(
+                    scenario_id=scenario.id,
+                    type=decision.type,
+                    name=decision.name,
+                    impact=decision.impact,
+                    start_month=decision.start_month,
+                    lag_months=decision.lag_months,
+                    ramp_months=decision.ramp_months,
+                    duration_months=decision.duration_months,
+                )
+            )
+
+    db.commit()
+    db.refresh(scenario)
+    return _serialize_scenario(scenario)
+
+
+@app.delete("/api/scenarios/{scenario_id}", status_code=204)
+def delete_scenario(
+    scenario_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    scenario = _get_user_scenario(db, current_user.id, scenario_id)
+    db.delete(scenario)
+    db.commit()
+    return Response(status_code=204)
+
 
 @app.get("/api/simulation/latest")
 def get_latest_simulation(
-    current_user: User = Depends(get_current_user), 
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Retrieve the most recent simulation run for this specific user
     last_run = db.query(SimulationRun)\
                  .filter(SimulationRun.user_id == current_user.id)\
                  .order_by(SimulationRun.created_at.desc())\
                  .first()
-    
+
     if not last_run:
         return {"inputs": None}
-    
-    return {
-        "inputs": last_run.inputs,
-        "result": last_run.result
-    }
-    current_user: User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-    # READ: Get the user's most recent simulation run
-    last_run = db.query(SimulationRun)\
-                 .filter(SimulationRun.user_id == current_user.id)\
-                 .order_by(SimulationRun.created_at.desc())\
-                 .first()
-    
-    if not last_run:
-        return {"inputs": None}
-    
+
     return {
         "id": last_run.id,
         "inputs": last_run.inputs,
         "result": last_run.result
     }
 
-@app.delete("/api/simulation/{run_id}")
-def delete_simulation(
-    run_id: int, 
-    current_user: User = Depends(get_current_user), 
+
+@app.get("/api/simulation-runs")
+def list_simulation_runs(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     # DELETE: Remove a specific run from the database

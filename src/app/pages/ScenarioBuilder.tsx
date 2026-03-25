@@ -1,6 +1,4 @@
-
-
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -19,13 +17,22 @@ import {
   DollarSign,
   Calendar,
   Target,
-  Edit2,
   Trash2,
   Zap,
   AlertCircle,
   Users,
-  Loader2,
+  Save,
+  RefreshCw,
 } from "lucide-react";
+import {
+  createScenario,
+  deleteScenario,
+  listScenarios,
+  updateScenario,
+  type Scenario,
+  type ScenarioDecisionPayload,
+  type ScenarioPayload,
+} from "../../services/simulationApi";
 
 interface Decision {
   id: string;
@@ -84,7 +91,6 @@ const decisionLibrary = [
   },
 ];
 
-// Feature 7: Stress Test Library for external events
 const stressLibrary = [
   {
     type: "market_downturn",
@@ -115,9 +121,42 @@ const stressLibrary = [
   },
 ];
 
+function fromApiDecision(decision: ScenarioDecisionPayload & { id?: number }): Decision {
+  return {
+    id: String(decision.id ?? Date.now()),
+    type: decision.type,
+    name: decision.name,
+    impact: decision.impact,
+    startMonth: decision.start_month,
+    lag: decision.lag_months ?? 0,
+    ramp: decision.ramp_months ?? 1,
+    duration:
+      decision.duration_months === null || decision.duration_months === undefined
+        ? "permanent"
+        : String(decision.duration_months),
+    isStressTest: stressLibrary.some((s) => s.type === decision.type),
+  };
+}
+
+function toPayloadDecision(decision: Decision): ScenarioDecisionPayload {
+  return {
+    type: decision.type,
+    name: decision.name,
+    impact: decision.impact,
+    start_month: decision.startMonth,
+    lag_months: decision.lag,
+    ramp_months: decision.ramp,
+    duration_months: decision.duration === "permanent" ? null : Number(decision.duration),
+  };
+}
+
 export function ScenarioBuilder() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [scenarioName, setScenarioName] = useState("");
+  const [scenarioDescription, setScenarioDescription] = useState("");
+  const [activeScenarioId, setActiveScenarioId] = useState<number | null>(null);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeScenarioId, setActiveScenarioId] = useState<string>("");
   
@@ -175,11 +214,13 @@ const syncToDb = async (decisions: Decision | Decision[]) => {
   }
 };
   const selectDecisionType = (type: string) => {
-    const decision = decisionLibrary.find((d) => d.type === type);
-    if (decision) {
-      setSelectedType(type);
-      setConfig({ ...config, impact: decision.defaultImpact });
+    const decision = decisionLibrary.find((entry) => entry.type === type);
+    if (!decision) {
+      return;
     }
+
+    setSelectedType(type);
+    setConfig((current) => ({ ...current, impact: decision.defaultImpact }));
   };
 
 // src/app/pages/ScenarioBuilder.tsx
@@ -277,8 +318,10 @@ const applyQuickStressTest = async () => {
 };
   // Add individual stress test
   const addStressTest = (stressType: string) => {
-    const stress = stressLibrary.find((s) => s.type === stressType);
-    if (!stress) return;
+    const stress = stressLibrary.find((entry) => entry.type === stressType);
+    if (!stress) {
+      return;
+    }
 
     const newDecision: Decision = {
       id: `stress_${Date.now()}`,
@@ -291,25 +334,180 @@ const applyQuickStressTest = async () => {
       duration: stress.duration,
       isStressTest: true,
     };
-    setDecisions([...decisions, newDecision]);
-  };
-if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>;
 
-  const selectedDecision = decisionLibrary.find((d) => d.type === selectedType);
+    setDecisions((current) => [...current, newDecision]);
+  };
+
+  const deleteDecisionFromEditor = (id: string) => {
+    setDecisions((current) => current.filter((decision) => decision.id !== id));
+  };
+
+  const saveScenario = async () => {
+    const trimmedName = scenarioName.trim();
+    if (!trimmedName) {
+      setError("Scenario name is required");
+      return;
+    }
+
+    const payload: ScenarioPayload = {
+      name: trimmedName,
+      description: scenarioDescription.trim() || null,
+      decisions: decisions.map(toPayloadDecision),
+    };
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const saved =
+        activeScenarioId === null
+          ? await createScenario(payload)
+          : await updateScenario(activeScenarioId, payload);
+
+      await refreshScenarios();
+      loadScenarioIntoEditor(saved);
+      setSuccess(activeScenarioId === null ? "Scenario created" : "Scenario updated");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save scenario");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteScenarioById = async (scenarioId: number) => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await deleteScenario(scenarioId);
+      if (activeScenarioId === scenarioId) {
+        resetForm();
+      }
+      await refreshScenarios();
+      setSuccess("Scenario deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete scenario");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedDecision = decisionLibrary.find((decision) => decision.type === selectedType);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-semibold text-slate-100">Create Scenario</h2>
-        <p className="text-slate-400 mt-1">
-          Define internal decisions and external events to simulate their impact
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-semibold text-slate-100">Create Scenario</h2>
+          <p className="text-slate-400 mt-1">
+            Define internal decisions and external events to simulate their impact
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => resetForm()} disabled={saving}>
+            New Scenario
+          </Button>
+          <Button variant="outline" onClick={() => void refreshScenarios()} disabled={loading || saving}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-     
+      {(error || success) && (
+        <Card className="shadow-sm">
+          <CardContent className="pt-6">
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {success && <p className="text-green-400 text-sm">{success}</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Scenario Details</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="scenarioName">Scenario Name</Label>
+            <Input
+              id="scenarioName"
+              value={scenarioName}
+              onChange={(event) => setScenarioName(event.target.value)}
+              placeholder="Ex: Conservative Hiring Plan"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="scenarioDescription">Description</Label>
+            <Input
+              id="scenarioDescription"
+              value={scenarioDescription}
+              onChange={(event) => setScenarioDescription(event.target.value)}
+              placeholder="Optional notes"
+            />
+          </div>
+          <div className="lg:col-span-2 flex gap-2">
+            <Button onClick={() => void saveScenario()} disabled={saving}>
+              <Save className="w-4 h-4 mr-2" />
+              {activeScenarioId === null ? "Create Scenario" : "Update Scenario"}
+            </Button>
+            {activeScenario && (
+              <Button
+                variant="destructive"
+                onClick={() => void deleteScenarioById(activeScenario.id)}
+                disabled={saving}
+              >
+                Delete Active
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Saved Scenarios</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-slate-400 text-sm">Loading scenarios...</p>
+          ) : scenarios.length === 0 ? (
+            <p className="text-slate-400 text-sm">No saved scenarios yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {scenarios.map((scenario) => (
+                <div
+                  key={scenario.id}
+                  className="flex items-center justify-between rounded-md border border-slate-700 px-3 py-2"
+                >
+                  <button
+                    className="text-left"
+                    onClick={() => loadScenarioIntoEditor(scenario)}
+                    type="button"
+                  >
+                    <p className="text-slate-100 font-medium">{scenario.name}</p>
+                    <p className="text-slate-400 text-xs">
+                      Decisions: {scenario.decisions.length} | Updated: {new Date(scenario.updated_at).toLocaleString()}
+                    </p>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void deleteScenarioById(scenario.id)}
+                    disabled={saving}
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Decision Library */}
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-slate-100">Decision Library</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -326,7 +524,7 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                   <Icon className="w-6 h-6 mb-2" />
                   <div className="font-medium">{decision.name}</div>
                   <div className="text-sm opacity-80 mt-1">
-                    Default: ${Math.abs(decision.defaultImpact).toLocaleString()}{" "}
+                    Default: ${Math.abs(decision.defaultImpact).toLocaleString()} {" "}
                     {decision.defaultImpact > 0 ? "revenue" : "cost"}
                   </div>
                 </button>
@@ -335,23 +533,17 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
           </div>
         </div>
 
-        {/* Configuration Column */}
-        {/* Right Column - Configuration */}
-           <div className="space-y-4">
-             <h3 className="text-lg font-semibold text-slate-100">
-               Decision Configuration
-             </h3>
-             <Card className="shadow-sm">
-               <CardContent className="pt-6 space-y-4">
-                 {selectedDecision && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-slate-100">Decision Configuration</h3>
+          <Card className="shadow-sm">
+            <CardContent className="pt-6 space-y-4">
+              {selectedDecision && (
                 <div className="pb-4 border-b border-slate-700">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
                       <selectedDecision.icon className="w-5 h-5 text-blue-400" />
                     </div>
-                    <div className="font-medium text-slate-100">
-                      {selectedDecision.name}
-                    </div>
+                    <div className="font-medium text-slate-100">{selectedDecision.name}</div>
                   </div>
                 </div>
               )}
@@ -362,14 +554,9 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                   id="impact"
                   type="number"
                   value={config.impact}
-                  onChange={(e) =>
-                    setConfig({ ...config, impact: Number(e.target.value) })
-                  }
+                  onChange={(event) => setConfig((current) => ({ ...current, impact: Number(event.target.value) }))}
                   disabled={!selectedType}
                 />
-                <p className="text-xs text-slate-400">
-                  Positive for revenue increase, negative for costs
-                </p>
               </div>
 
               <div className="space-y-2">
@@ -380,8 +567,8 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                   min="1"
                   max="24"
                   value={config.startMonth}
-                  onChange={(e) =>
-                    setConfig({ ...config, startMonth: Number(e.target.value) })
+                  onChange={(event) =>
+                    setConfig((current) => ({ ...current, startMonth: Number(event.target.value) }))
                   }
                   disabled={!selectedType}
                 />
@@ -394,14 +581,9 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                   type="number"
                   min="0"
                   value={config.lag}
-                  onChange={(e) =>
-                    setConfig({ ...config, lag: Number(e.target.value) })
-                  }
+                  onChange={(event) => setConfig((current) => ({ ...current, lag: Number(event.target.value) }))}
                   disabled={!selectedType}
                 />
-                <p className="text-xs text-slate-400">
-                  Delay before impact takes effect
-                </p>
               </div>
 
               <div className="space-y-2">
@@ -411,23 +593,16 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                   type="number"
                   min="1"
                   value={config.ramp}
-                  onChange={(e) =>
-                    setConfig({ ...config, ramp: Number(e.target.value) })
-                  }
+                  onChange={(event) => setConfig((current) => ({ ...current, ramp: Number(event.target.value) }))}
                   disabled={!selectedType}
                 />
-                <p className="text-xs text-slate-400">
-                  Months to reach full impact
-                </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="duration">Duration</Label>
                 <Select
                   value={config.duration}
-                  onValueChange={(value) =>
-                    setConfig({ ...config, duration: value })
-                  }
+                  onValueChange={(value) => setConfig((current) => ({ ...current, duration: value }))}
                   disabled={!selectedType}
                 >
                   <SelectTrigger>
@@ -442,19 +617,14 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                 </Select>
               </div>
 
-              <Button
-                onClick={addDecision}
-                disabled={!selectedType}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              >
+              <Button onClick={addDecision} disabled={!selectedType} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                 Add to Scenario
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
-      
-      {/* Feature 7: Quick Stress Testing Framework Section */}
+
       <Card className="border-red-900/30 bg-slate-900/50 shadow-xl overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 pb-4">
           <div className="space-y-1">
@@ -464,10 +634,10 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
               </div>
               <CardTitle className="text-slate-100">Stress Testing Framework</CardTitle>
             </div>
-            <p className="text-sm text-slate-400">Apply external shocks to test your startup's resilience</p>
+            <p className="text-sm text-slate-400">Apply external shocks to test startup resilience</p>
           </div>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={applyQuickStressTest}
             className="border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800 transition-all"
           >
@@ -487,47 +657,38 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                 >
                   <Zap className="absolute -top-2 -right-2 w-16 h-16 opacity-[0.03] rotate-12 group-hover:opacity-10 transition-opacity" />
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-2 bg-white/5 rounded-lg"><Icon className="w-6 h-6" /></div>
+                    <div className="p-2 bg-white/5 rounded-lg">
+                      <Icon className="w-6 h-6" />
+                    </div>
                     <Zap className="w-4 h-4 text-white/20 group-hover:text-yellow-500/50 transition-colors" />
                   </div>
                   <div className="font-bold text-lg tracking-tight">{stress.name}</div>
                   <div className="text-sm opacity-70 mt-1.5 leading-relaxed">{stress.description}</div>
-                  <div className="flex items-center gap-2 mt-5 text-xs font-mono uppercase tracking-widest opacity-60">
-                    <div className="h-px flex-1 bg-current opacity-20" />
-                    Impact: ${Math.abs(stress.defaultImpact).toLocaleString()}
-                  </div>
                 </button>
               );
             })}
           </div>
         </CardContent>
       </Card>
-      {/* Timeline Visualization */}
-         <Card className="shadow-sm">
-           <CardHeader>
-             <CardTitle>Timeline View (12 Months)</CardTitle>
-           </CardHeader>
-           <CardContent>
-             <div className="relative h-24 bg-slate-900/50 rounded-lg border border-slate-700 overflow-x-auto">
-               <div className="absolute inset-0 flex">
-                 {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                <div
-                  key={month}
-                  className="flex-1 border-r border-slate-700 last:border-r-0 relative"
-                >
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-400">
-                    M{month}
-                  </div>
-                  
-                  {/* Show decision markers */}
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Timeline View (12 Months)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="relative h-24 bg-slate-900/50 rounded-lg border border-slate-700 overflow-x-auto">
+            <div className="absolute inset-0 flex">
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <div key={month} className="flex-1 border-r border-slate-700 last:border-r-0 relative">
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-400">M{month}</div>
                   {decisions
-                    .filter((d) => d.startMonth === month)
-                    .map((d, idx) => (
+                    .filter((decision) => decision.startMonth === month)
+                    .map((decision, markerIndex) => (
                       <div
-                        key={d.id}
+                        key={decision.id}
                         className="absolute top-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-blue-500"
-                        style={{ top: `${8 + idx * 16}px` }}
-                        title={d.name}
+                        style={{ top: `${8 + markerIndex * 16}px` }}
+                        title={decision.name}
                       />
                     ))}
                 </div>
@@ -537,18 +698,14 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
         </CardContent>
       </Card>
 
-      {/* Active Decisions */}
       {decisions.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-slate-100">
-            Active Decisions
-          </h3>
+          <h3 className="text-lg font-semibold text-slate-100">Active Decisions</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {decisions.map((decision) => {
-              const decisionDef = decisionLibrary.find(
-                (d) => d.type === decision.type
-              );
-              const Icon = decisionDef?.icon || Target;
+              const decisionDef = decisionLibrary.find((entry) => entry.type === decision.type);
+              const stressDef = stressLibrary.find((entry) => entry.type === decision.type);
+              const Icon = decisionDef?.icon ?? stressDef?.icon ?? Target;
 
               return (
                 <Card key={decision.id} className="shadow-sm">
@@ -559,51 +716,35 @@ if (loading) return <div className="flex justify-center p-10"><Loader2 className
                           <Icon className="w-5 h-5 text-slate-300" />
                         </div>
                         <div>
-                          <div className="font-medium text-slate-100">
-                            {decision.name}
-                          </div>
-                          <div className="text-sm text-slate-400">
-                            Starts month {decision.startMonth}
-                          </div>
+                          <div className="font-medium text-slate-100">{decision.name}</div>
+                          <div className="text-sm text-slate-400">Starts month {decision.startMonth}</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-                          <Edit2 className="w-4 h-4 text-slate-400" />
-                        </button>
-                        <button
-                          onClick={() => deleteDecision(decision.id)}
-                          className="p-2 hover:bg-red-900/30 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => deleteDecisionFromEditor(decision.id)}
+                        className="p-2 hover:bg-red-900/30 rounded-lg transition-colors"
+                        type="button"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </button>
                     </div>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-slate-400">Impact:</span>
-                        <span className="font-medium text-slate-100">
-                          ${decision.impact.toLocaleString()}
-                        </span>
+                        <span className="font-medium text-slate-100">${decision.impact.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Lag:</span>
-                        <span className="text-slate-100">
-                          {decision.lag} months
-                        </span>
+                        <span className="text-slate-100">{decision.lag} months</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Ramp:</span>
-                        <span className="text-slate-100">
-                          {decision.ramp} months
-                        </span>
+                        <span className="text-slate-100">{decision.ramp} months</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Duration:</span>
                         <span className="text-slate-100">
-                          {decision.duration === "permanent"
-                            ? "Permanent"
-                            : `${decision.duration} months`}
+                          {decision.duration === "permanent" ? "Permanent" : `${decision.duration} months`}
                         </span>
                       </div>
                     </div>

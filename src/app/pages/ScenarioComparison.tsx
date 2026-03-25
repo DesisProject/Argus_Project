@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Slider } from "../components/ui/slider";
 import {
   LineChart,
   Line,
@@ -22,7 +21,20 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { Badge } from "../components/ui/badge";
-import { AlertTriangle } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  listScenarios,
+  listSimulationRuns,
+  type Scenario,
+  type SimulationRun,
+} from "../../services/simulationApi";
 
 interface ScenarioData {
   month: number;
@@ -33,58 +45,115 @@ interface ScenarioData {
 
 type Variant = "best" | "expected" | "worst";
 
+const defaultChartData: ScenarioData[] = Array.from({ length: 24 }, (_, index) => ({
+  month: index + 1,
+  best: 0,
+  expected: 0,
+  worst: 0,
+}));
+
 export function ScenarioComparison() {
   const [selectedVariant, setSelectedVariant] = useState<Variant>("expected");
-  const [demandShockSeverity, setDemandShockSeverity] = useState([50]);
+  const [runs, setRuns] = useState<SimulationRun[]>([]);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Generate scenario data based on demand shock severity
-  const generateScenarioData = (): ScenarioData[] => {
-    const data: ScenarioData[] = [];
-    const startingCash = 500000;
-    const severityFactor = demandShockSeverity[0] / 100;
+  const refreshData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [runData, scenarioData] = await Promise.all([
+        listSimulationRuns(50),
+        listScenarios(),
+      ]);
+      setRuns(runData);
+      setScenarios(scenarioData);
+      setSelectedRunId((current) => {
+        if (current !== null && runData.some((run) => run.id === current)) {
+          return current;
+        }
+        return runData[0]?.id ?? null;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load simulation runs");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    for (let month = 0; month <= 24; month++) {
-      // Best case scenario
-      let bestCash = startingCash + month * 15000;
-      
-      // Expected case scenario
-      let expectedCash = startingCash + month * 5000 - month * 2000;
-      
-      // Worst case scenario - affected by demand shock
-      let worstCash = startingCash - month * 8000 * (1 + severityFactor);
+  useEffect(() => {
+    void refreshData();
+  }, []);
 
-      // Add some variability
-      if (month > 6) {
-        bestCash += (month - 6) * 3000;
-        expectedCash -= (month - 6) * 1000;
-        worstCash -= (month - 6) * 5000 * severityFactor;
-      }
+  const scenarioNameById = useMemo(() => {
+    return new Map<number, string>(scenarios.map((scenario) => [scenario.id, scenario.name]));
+  }, [scenarios]);
 
-      data.push({
-        month,
-        best: Math.round(bestCash),
-        expected: Math.round(expectedCash),
-        worst: Math.round(worstCash),
+  const selectedRun = useMemo(() => {
+    if (!runs.length) {
+      return null;
+    }
+    if (selectedRunId === null) {
+      return runs[0];
+    }
+    return runs.find((run) => run.id === selectedRunId) ?? runs[0];
+  }, [runs, selectedRunId]);
+
+  const scenarioData = useMemo<ScenarioData[]>(() => {
+    if (!selectedRun) {
+      return defaultChartData;
+    }
+
+    const byMonth = new Map<number, ScenarioData>();
+
+    for (const point of selectedRun.result.best) {
+      byMonth.set(point.month, {
+        month: point.month,
+        best: Math.round(point.cash_balance ?? 0),
+        expected: 0,
+        worst: 0,
       });
     }
 
-    return data;
-  };
+    for (const point of selectedRun.result.expected) {
+      const current = byMonth.get(point.month) ?? {
+        month: point.month,
+        best: 0,
+        expected: 0,
+        worst: 0,
+      };
+      current.expected = Math.round(point.cash_balance ?? 0);
+      byMonth.set(point.month, current);
+    }
 
-  const scenarioData = generateScenarioData();
+    for (const point of selectedRun.result.worst) {
+      const current = byMonth.get(point.month) ?? {
+        month: point.month,
+        best: 0,
+        expected: 0,
+        worst: 0,
+      };
+      current.worst = Math.round(point.cash_balance ?? 0);
+      byMonth.set(point.month, current);
+    }
+
+    return [...byMonth.values()].sort((a, b) => a.month - b.month);
+  }, [selectedRun]);
 
   const getRunway = (data: ScenarioData[], variant: Variant) => {
-    const index = data.findIndex((d) => d[variant] < 0);
+    const index = data.findIndex((item) => item[variant] < 0);
     return index === -1 ? "24+" : index.toString();
   };
 
   const getMinCash = (data: ScenarioData[], variant: Variant) => {
-    return Math.min(...data.map((d) => d[variant]));
+    return Math.min(...data.map((item) => item[variant]));
   };
 
   const getInsolvencyRisk = (runway: string) => {
     if (runway === "24+") return "Low";
-    const months = parseInt(runway);
+    const months = parseInt(runway, 10);
     if (months > 12) return "Low";
     if (months > 6) return "Medium";
     return "High";
@@ -93,8 +162,8 @@ export function ScenarioComparison() {
   const getResilienceGrade = (runway: string, minCash: number) => {
     if (runway === "24+" && minCash > 200000) return "A";
     if (runway === "24+" || minCash > 100000) return "B";
-    if (parseInt(runway) > 12) return "C";
-    if (parseInt(runway) > 6) return "D";
+    if (parseInt(runway, 10) > 12) return "C";
+    if (parseInt(runway, 10) > 6) return "D";
     return "F";
   };
 
@@ -131,73 +200,114 @@ export function ScenarioComparison() {
     },
   ];
 
-  const riskDrivers = [
-    {
-      factor: "Hiring increased payroll",
-      impact: "High",
-      monthlyEffect: "-$15,000",
-    },
-    {
-      factor: "Demand shock reduced revenue",
-      impact: "Critical",
-      monthlyEffect: `-$${Math.round(20000 * (demandShockSeverity[0] / 100)).toLocaleString()}`,
-    },
-    {
-      factor: "Fundraising delay created cash gap",
-      impact: "Medium",
-      monthlyEffect: "-$10,000",
-    },
-  ];
+  const riskDrivers = selectedRun
+    ? [
+        {
+          factor: "Payroll",
+          impact: selectedRun.inputs.payroll > 7000 ? "High" : "Medium",
+          monthlyEffect: `-$${Math.round(selectedRun.inputs.payroll).toLocaleString()}`,
+        },
+        {
+          factor: "Rent",
+          impact: selectedRun.inputs.rent > 3000 ? "High" : "Medium",
+          monthlyEffect: `-$${Math.round(selectedRun.inputs.rent).toLocaleString()}`,
+        },
+        {
+          factor: "Marketing",
+          impact: selectedRun.inputs.marketing > 3000 ? "High" : "Low",
+          monthlyEffect: `-$${Math.round(selectedRun.inputs.marketing).toLocaleString()}`,
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-semibold text-slate-100">
-          Scenario Comparison
-        </h2>
-        <p className="text-slate-400 mt-1">
-          Compare best, expected, and worst case scenarios under uncertainty
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-semibold text-slate-100">Scenario Comparison</h2>
+          <p className="text-slate-400 mt-1">
+            Compare best, expected, and worst trajectories from saved simulation runs
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => void refreshData()} disabled={loading}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      {/* Variant Selector */}
+      {error && (
+        <Card className="shadow-sm">
+          <CardContent className="pt-6">
+            <p className="text-sm text-red-400">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Simulation Run</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <p className="text-sm text-slate-400">Loading simulation runs...</p>
+          ) : runs.length === 0 ? (
+            <p className="text-sm text-slate-400">No simulation runs found yet. Run a simulation from the dashboard first.</p>
+          ) : (
+            <>
+              <Select
+                value={selectedRun ? String(selectedRun.id) : undefined}
+                onValueChange={(value) => setSelectedRunId(Number(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a simulation run" />
+                </SelectTrigger>
+                <SelectContent>
+                  {runs.map((run) => (
+                    <SelectItem key={run.id} value={String(run.id)}>
+                      #{run.id} | {new Date(run.created_at).toLocaleString()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedRun && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="outline">Run ID: {selectedRun.id}</Badge>
+                  <Badge variant="outline">
+                    Scenario: {selectedRun.scenario_id ? scenarioNameById.get(selectedRun.scenario_id) ?? `#${selectedRun.scenario_id}` : "None"}
+                  </Badge>
+                  <Badge variant="outline">User: {selectedRun.result.user_email}</Badge>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex gap-3">
         <Button
           onClick={() => setSelectedVariant("best")}
           variant={selectedVariant === "best" ? "default" : "outline"}
-          className={
-            selectedVariant === "best"
-              ? "bg-blue-600 hover:bg-blue-700 text-white"
-              : ""
-          }
+          className={selectedVariant === "best" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
         >
           Best Case
         </Button>
         <Button
           onClick={() => setSelectedVariant("expected")}
           variant={selectedVariant === "expected" ? "default" : "outline"}
-          className={
-            selectedVariant === "expected"
-              ? "bg-amber-600 hover:bg-amber-700 text-white"
-              : ""
-          }
+          className={selectedVariant === "expected" ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
         >
           Expected Case
         </Button>
         <Button
           onClick={() => setSelectedVariant("worst")}
           variant={selectedVariant === "worst" ? "default" : "outline"}
-          className={
-            selectedVariant === "worst"
-              ? "bg-red-600 hover:bg-red-700 text-white"
-              : ""
-          }
+          className={selectedVariant === "worst" ? "bg-red-600 hover:bg-red-700 text-white" : ""}
         >
           Worst Case
         </Button>
       </div>
 
-      {/* Multi-line Chart */}
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>Cash Under Uncertainty</CardTitle>
@@ -213,7 +323,7 @@ export function ScenarioComparison() {
                     value: "Months",
                     position: "insideBottom",
                     offset: -5,
-                    fill: "#94a3b8"
+                    fill: "#94a3b8",
                   }}
                   stroke="#94a3b8"
                   tick={{ fill: "#94a3b8" }}
@@ -223,41 +333,31 @@ export function ScenarioComparison() {
                     value: "Cash Balance ($)",
                     angle: -90,
                     position: "insideLeft",
-                    fill: "#94a3b8"
+                    fill: "#94a3b8",
                   }}
                   stroke="#94a3b8"
                   tick={{ fill: "#94a3b8" }}
                   tickFormatter={(value) =>
-                    value >= 0
-                      ? `$${(value / 1000).toFixed(0)}k`
-                      : `-$${Math.abs(value / 1000).toFixed(0)}k`
+                    value >= 0 ? `$${(value / 1000).toFixed(0)}k` : `-$${Math.abs(value / 1000).toFixed(0)}k`
                   }
                 />
                 <Tooltip
                   formatter={(value: number, name: string) => [
                     `$${value.toLocaleString()}`,
-                    name === "best"
-                      ? "Best"
-                      : name === "expected"
-                      ? "Expected"
-                      : "Worst",
+                    name === "best" ? "Best" : name === "expected" ? "Expected" : "Worst",
                   ]}
                   contentStyle={{
                     backgroundColor: "#1e293b",
                     border: "1px solid #475569",
                     borderRadius: "8px",
-                    color: "#e4e7eb"
+                    color: "#e4e7eb",
                   }}
                   labelStyle={{ color: "#e4e7eb" }}
                 />
                 <Legend
                   wrapperStyle={{ paddingTop: "20px", color: "#94a3b8" }}
                   formatter={(value) =>
-                    value === "best"
-                      ? "Best Case"
-                      : value === "expected"
-                      ? "Expected Case"
-                      : "Worst Case"
+                    value === "best" ? "Best Case" : value === "expected" ? "Expected Case" : "Worst Case"
                   }
                 />
                 <ReferenceLine
@@ -271,14 +371,7 @@ export function ScenarioComparison() {
                     fill: "#ef4444",
                   }}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="best"
-                  stroke="#3b82f6"
-                  strokeWidth={3}
-                  dot={false}
-                  name="best"
-                />
+                <Line type="monotone" dataKey="best" stroke="#3b82f6" strokeWidth={3} dot={false} name="best" />
                 <Line
                   type="monotone"
                   dataKey="expected"
@@ -287,21 +380,13 @@ export function ScenarioComparison() {
                   dot={false}
                   name="expected"
                 />
-                <Line
-                  type="monotone"
-                  dataKey="worst"
-                  stroke="#ef4444"
-                  strokeWidth={3}
-                  dot={false}
-                  name="worst"
-                />
+                <Line type="monotone" dataKey="worst" stroke="#ef4444" strokeWidth={3} dot={false} name="worst" />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
-      {/* Comparison Table */}
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>Scenario Metrics</CardTitle>
@@ -321,9 +406,7 @@ export function ScenarioComparison() {
               {comparisonData.map((row) => (
                 <TableRow key={row.variant}>
                   <TableCell className="font-medium">{row.variant}</TableCell>
-                  <TableCell className="text-right">
-                    ${row.minCash.toLocaleString()}
-                  </TableCell>
+                  <TableCell className="text-right">${row.minCash.toLocaleString()}</TableCell>
                   <TableCell className="text-right">{row.runway}</TableCell>
                   <TableCell className="text-right">
                     <Badge
@@ -359,16 +442,15 @@ export function ScenarioComparison() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Risk Drivers */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <CardTitle>Risk Drivers</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
+      <Card className="shadow-sm">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <CardTitle>Risk Drivers (From Selected Run Inputs)</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {selectedRun ? (
             <div className="space-y-4">
               {riskDrivers.map((driver, index) => (
                 <div
@@ -376,12 +458,8 @@ export function ScenarioComparison() {
                   className="flex items-center justify-between py-3 border-b border-slate-700 last:border-b-0"
                 >
                   <div className="flex-1">
-                    <div className="font-medium text-slate-100">
-                      {driver.factor}
-                    </div>
-                    <div className="text-sm text-slate-400 mt-1">
-                      Monthly effect: {driver.monthlyEffect}
-                    </div>
+                    <div className="font-medium text-slate-100">{driver.factor}</div>
+                    <div className="text-sm text-slate-400 mt-1">Monthly effect: {driver.monthlyEffect}</div>
                   </div>
                   <Badge
                     variant={
@@ -397,69 +475,11 @@ export function ScenarioComparison() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Interactive Demand Shock Slider */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Demand Shock Severity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm text-slate-400">
-                  Adjust severity to see impact on projections
-                </span>
-                <span className="font-semibold text-lg text-slate-100">
-                  {demandShockSeverity[0]}%
-                </span>
-              </div>
-              <Slider
-                value={demandShockSeverity}
-                onValueChange={setDemandShockSeverity}
-                max={100}
-                step={5}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-slate-500 mt-2">
-                <span>Mild</span>
-                <span>Moderate</span>
-                <span>Severe</span>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-700">
-              <div className="text-sm text-slate-400 mb-2">
-                Current Impact Analysis
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Revenue reduction:</span>
-                  <span className="font-medium text-red-400">
-                    -{demandShockSeverity[0]}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Monthly loss:</span>
-                  <span className="font-medium text-red-400">
-                    -$
-                    {Math.round(
-                      20000 * (demandShockSeverity[0] / 100)
-                    ).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Recovery timeline:</span>
-                  <span className="font-medium text-slate-100">
-                    {Math.round((demandShockSeverity[0] / 10) + 3)} months
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          ) : (
+            <p className="text-sm text-slate-400">Select a simulation run to inspect its risk profile.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
