@@ -47,8 +47,43 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
     if not event_type or not event_payload:
         return
 
+    # Normalize the event type to match the frontend 'type' strings
     event = event_type.lower()
-    if event == "hiring":
+    
+    # Map 'hire' from frontend to hiring calculator
+    if event in ["hiring", "hire"]:
         calculate_hiring_impact(timeline_map, event_payload)
-    elif event == "expansion":
+    
+    # Map 'expand' from frontend to expansion calculator
+    elif event in ["expansion", "expand"]:
         calculate_expansion_impact(timeline_map, event_payload)
+        
+    # Add handlers for other frontend types to ensure they affect the graph
+    elif event == "marketing":
+        calculate_marketing_impact(timeline_map, event_payload)
+        
+    elif event == "reduce":
+        calculate_cost_reduction_impact(timeline_map, event_payload)
+
+def calculate_marketing_impact(timeline_map, payload):
+    """Simple math for marketing campaigns."""
+    start_month = payload.get("startMonth", 1)
+    cost = payload.get("impact", 0) # Negative value from frontend
+    
+    for month_index in range(len(timeline_map["EXPECTED"])):
+        if month_index + 1 >= start_month:
+            for timeline in timeline_map.values():
+                # Apply the cost (which is negative in the library)
+                timeline[month_index]["operating_income"] += cost
+                timeline[month_index]["net_cash_flow"] += cost
+
+def calculate_cost_reduction_impact(timeline_map, payload):
+    """Math for reducing fixed costs."""
+    start_month = payload.get("startMonth", 1)
+    savings = abs(payload.get("impact", 0))
+    
+    for month_index in range(len(timeline_map["EXPECTED"])):
+        if month_index + 1 >= start_month:
+            for timeline in timeline_map.values():
+                timeline[month_index]["operating_income"] += savings
+                timeline[month_index]["net_cash_flow"] += savings

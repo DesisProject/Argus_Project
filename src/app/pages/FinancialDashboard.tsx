@@ -37,6 +37,7 @@ interface FinancialInputs {
 interface MonthData {
   month: number;
   cash: number;
+  scenarioCash: number;
   revenue: number;
   costs: number;
   burn: number;
@@ -157,22 +158,37 @@ export function FinancialDashboard() {
         fixed_expense_growth_rate: 0,
       });
 
-      const allMonths = [
+      // 1. Combine baseline years into one timeline
+      const baselineTimeline = [
         ...result.year1,
         ...result.year2.map((d) => ({ ...d, month: d.month + 12 })),
         ...result.year3.map((d) => ({ ...d, month: d.month + 24 })),
       ];
 
-      let cash = currentInputs.startingCash;
-      const data: MonthData[] = allMonths.map((d: any) => {
+      // 2. Combine scenario years into one timeline
+      const scenarioTimeline = [
+        ...result.scenario_year1,
+        ...result.scenario_year2.map((d: any) => ({ ...d, month: d.month + 12 })),
+        ...result.scenario_year3.map((d: any) => ({ ...d, month: d.month + 24 })),
+      ];
+
+      let currentBaselineCash = currentInputs.startingCash;
+      let currentScenarioCash = currentInputs.startingCash;
+
+      // 3. Map both timelines into the simulationData state
+      const data: MonthData[] = baselineTimeline.map((d: any, idx: number) => {
+        const s = scenarioTimeline[idx];
         const row = {
           month: d.month,
-          cash: Math.round(cash),
+          cash: Math.round(currentBaselineCash),
+          scenarioCash: Math.round(currentScenarioCash), // Tracking scenario impact
           revenue: Math.round(d.revenue),
           costs: Math.round(d.revenue - d.operating_income),
           burn: Math.round(-d.operating_income),
         };
-        cash += d.operating_income;
+
+        currentBaselineCash += d.operating_income;
+        currentScenarioCash += s.operating_income;
         return row;
       });
 
@@ -423,7 +439,7 @@ export function FinancialDashboard() {
                         dataKey="scenarioCash" // Calculated from result.expected
                         stroke="#10b981" // Green color for scenario
                         strokeWidth={3}
-                        strokeDasharray="5 5" // Dashed line to distinguish from baseline
+                        // strokeDasharray="5 5" // Dashed line to distinguish from baseline
                         name="Scenario Projection"
                         dot={false}
                       />
@@ -458,6 +474,7 @@ export function FinancialDashboard() {
                         <TableRow>
                           <TableHead>Month</TableHead>
                           <TableHead className="text-right">Cash Balance</TableHead>
+                          <TableHead className="text-right text-green-400">Scenario Cash</TableHead> {/* New Header */}
                           <TableHead className="text-right">Revenue</TableHead>
                           <TableHead className="text-right">Total Costs</TableHead>
                           <TableHead className="text-right">Monthly Burn</TableHead>
@@ -469,6 +486,9 @@ export function FinancialDashboard() {
                             <TableCell>{data.month}</TableCell>
                             <TableCell className="text-right">
                               ${data.cash.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right text-green-400"> {/* New Cell */}
+                              ${data.scenarioCash.toLocaleString()}
                             </TableCell>
                             <TableCell className="text-right">
                               ${data.revenue.toLocaleString()}

@@ -26,9 +26,17 @@ export interface MonthData {
 }
 
 export interface SimulationResponse {
+  baseline: MonthData[]; // Full 36-month baseline
+  scenario: MonthData[];
   year1: MonthData[];
   year2: MonthData[];
   year3: MonthData[];
+  scenario_year1: MonthData[];
+  scenario_year2: MonthData[];
+  scenario_year3: MonthData[];
+  best: MonthData[];
+  expected: MonthData[];
+  worst: MonthData[];
 }
 
 const API_BASE = "http://localhost:8000";

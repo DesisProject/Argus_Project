@@ -166,10 +166,24 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
     # This ensures "Best/Expected/Worst" reflect your persistent events
     for d in db_decisions:
         # Example: Applying a hiring event to the timeline
+        current_decision_data = {
+            "impact": d.impact,
+            "startMonth": d.start_month,
+            "lag": d.lag_months,
+            "ramp": d.ramp_months,
+            "duration": d.duration_months if d.duration_months else "permanent"
+        }
+        
+        temp_scenario_map = {
+            "BEST": scenario_timeline,
+            "EXPECTED": scenario_timeline,
+            "WORST": scenario_timeline
+        }
+        
         apply_event_wrapper(
-            {"SCENARIO": scenario_timeline}, 
+            temp_scenario_map, 
             d.type, 
-            d.payload
+            current_decision_data 
         )
     
     best_timeline = copy.deepcopy(baseline_timeline)
@@ -213,6 +227,9 @@ def simulate(request: SimulationRequest, current_user: User = Depends(get_curren
         "year1": baseline_timeline[0:12],
         "year2": baseline_timeline[12:24],
         "year3": baseline_timeline[24:36],
+        "scenario_year1": scenario_timeline[0:12],
+        "scenario_year2": scenario_timeline[12:24],
+        "scenario_year3": scenario_timeline[24:36],
         "best": best_timeline,
         "expected": expected_timeline,
         "worst": worst_timeline
@@ -281,31 +298,71 @@ def delete_simulation(
 from models.scenario import Scenario
 from models.scenario_decision import ScenarioDecision
 
-@app.get("/api/scenarios/active/decisions")
-def get_active_decisions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Fetch the latest scenario or a default one for the user
-    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
-    if not scenario:
-        return []
-    return scenario.decisions
+# startup_financial_engine/api.py
+
+# startup_financial_engine/api.py
 
 @app.post("/api/scenarios/decisions")
 def add_decision(decision_data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Ensure a scenario exists to attach the decision to
     scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
     if not scenario:
-        scenario = Scenario(user_id=current_user.id, name="Default Scenario")
+        scenario = Scenario(user_id=current_user.id, name="Active Scenario")
         db.add(scenario)
         db.commit()
         db.refresh(scenario)
     
+    # Manually map keys from frontend (camelCase) to DB (snake_case)
     new_decision = ScenarioDecision(
         scenario_id=scenario.id,
         type=decision_data['type'],
-        payload=decision_data['payload'] # JSON containing date/cost
+        name=decision_data.get('name', decision_data['type']),
+        impact=float(decision_data['impact']),
+        start_month=int(decision_data['startMonth']),
+        lag_months=int(decision_data.get('lag', 0)),
+        ramp_months=int(decision_data.get('ramp', 1)),
+        duration_months=None if decision_data['duration'] == "permanent" else int(decision_data['duration'])
     )
     db.add(new_decision)
     db.commit()
+    db.refresh(new_decision) 
+    return new_decision
+
+@app.get("/api/scenarios/active/decisions")
+def get_active_decisions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+    if not scenario:
+        return []
+        
+    # Map DB objects back to Frontend interface
+    return [
+        {
+            "id": str(d.id),
+            "type": d.type,
+            "name": d.name,
+            "impact": d.impact,
+            "startMonth": d.start_month,
+            "lag": d.lag_months,
+            "ramp": d.ramp_months,
+            "duration": "permanent" if d.duration_months is None else str(d.duration_months)
+        } for d in scenario.decisions
+    ]
+    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+    
+    # payload mapping
+    new_decision = ScenarioDecision(
+        scenario_id=scenario.id,
+        type=decision_data['type'],
+        name=decision_data.get('name', 'New Decision'),
+        impact=float(decision_data['impact']),
+        start_month=int(decision_data['startMonth']), # Map frontend 'startMonth' to DB 'start_month'
+        lag_months=int(decision_data.get('lag', 0)),
+        ramp_months=int(decision_data.get('ramp', 1)),
+        duration_months=None if decision_data['duration'] == "permanent" else int(decision_data['duration'])
+    )
+    
+    db.add(new_decision)
+    db.commit()
+    db.refresh(new_decision)
     return new_decision
 
 @app.delete("/api/scenarios/decisions/{decision_id}")
