@@ -19,6 +19,7 @@ from auth import verify_password, get_password_hash, create_access_token, SECRET
 # --- NEW IMPORTS FOR SIMULATION LOGIC ---
 from event_calculators import apply_event_wrapper
 from main import calculate_cash_metrics
+from resilience import summarize_resilience
 
 app = FastAPI()
 app.add_middleware(
@@ -306,6 +307,13 @@ def simulate(
     calculate_cash_metrics(worst_timeline, starting_cash)
 
     calculate_cash_metrics(scenario_timeline, starting_cash)
+    resilience_summary = {
+        "baseline": summarize_resilience(baseline_timeline),
+        "scenario": summarize_resilience(scenario_timeline),
+        "best": summarize_resilience(best_timeline),
+        "expected": summarize_resilience(expected_timeline),
+        "worst": summarize_resilience(worst_timeline),
+    }
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
@@ -317,7 +325,8 @@ def simulate(
         "scenario_year3": scenario_timeline[24:36],
         "best": best_timeline,
         "expected": expected_timeline,
-        "worst": worst_timeline
+        "worst": worst_timeline,
+        "resilience": resilience_summary,
     }
 
     request_payload = request.dict()
