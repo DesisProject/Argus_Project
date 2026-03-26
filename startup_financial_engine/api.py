@@ -19,6 +19,7 @@ from auth import verify_password, get_password_hash, create_access_token, SECRET
 # --- NEW IMPORTS FOR SIMULATION LOGIC ---
 from event_calculators import apply_event_wrapper
 from main import calculate_cash_metrics
+from mitigation_engine import generate_mitigation_suggestions
 from resilience import summarize_resilience
 from risk_signals import (
     detect_fragility_signal,
@@ -170,6 +171,18 @@ def _decision_to_event_payload(decision: ScenarioDecision) -> Dict[str, Any]:
 
     return payload
 
+
+def _decision_snapshot(decision: ScenarioDecision) -> Dict[str, Any]:
+    return {
+        "type": decision.type,
+        "name": decision.name,
+        "impact": decision.impact,
+        "start_month": decision.start_month,
+        "lag_months": decision.lag_months,
+        "ramp_months": decision.ramp_months,
+        "duration_months": decision.duration_months,
+    }
+
 # --- AUTHENTICATION ROUTES ---
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -274,6 +287,7 @@ def simulate(
         if selected_scenario
         else []
     )
+    decision_snapshots = [_decision_snapshot(decision) for decision in db_decisions]
     has_direct_event = bool(request.event_type and request.event_payload)
     has_active_scenario = bool(db_decisions) or has_direct_event
 
@@ -362,6 +376,16 @@ def simulate(
             risk_signals["worst"].append(worst_fragility)
             sort_risk_signals(risk_signals["worst"])
 
+    mitigation_suggestions = generate_mitigation_suggestions(
+        request,
+        decision_snapshots,
+        {
+            "resilience": resilience_summary,
+        },
+        risk_signals,
+        has_direct_event,
+    )
+
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
@@ -376,6 +400,7 @@ def simulate(
         "worst": worst_timeline,
         "resilience": resilience_summary,
         "risk_signals": risk_signals,
+        "mitigation_suggestions": mitigation_suggestions,
     }
 
     request_payload = request.dict()
