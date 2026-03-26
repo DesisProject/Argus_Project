@@ -20,6 +20,11 @@ from auth import verify_password, get_password_hash, create_access_token, SECRET
 from event_calculators import apply_event_wrapper
 from main import calculate_cash_metrics
 from resilience import summarize_resilience
+from risk_signals import (
+    detect_fragility_signal,
+    detect_timeline_risk_signals,
+    sort_risk_signals,
+)
 
 app = FastAPI()
 app.add_middleware(
@@ -269,6 +274,8 @@ def simulate(
         if selected_scenario
         else []
     )
+    has_direct_event = bool(request.event_type and request.event_payload)
+    has_active_scenario = bool(db_decisions) or has_direct_event
 
     scenario_best_timeline = copy.deepcopy(baseline_timeline)
     scenario_expected_timeline = copy.deepcopy(baseline_timeline)
@@ -314,6 +321,47 @@ def simulate(
         "expected": summarize_resilience(expected_timeline),
         "worst": summarize_resilience(worst_timeline),
     }
+    scenario_signal_timeline = expected_timeline if has_direct_event else scenario_timeline
+    scenario_signal_resilience = (
+        resilience_summary["expected"] if has_direct_event else resilience_summary["scenario"]
+    )
+    risk_signals = {
+        "baseline": detect_timeline_risk_signals(
+            baseline_timeline,
+            resilience_summary["baseline"],
+        ),
+        "scenario": [],
+        "worst": [],
+    }
+
+    if has_active_scenario:
+        risk_signals["scenario"] = detect_timeline_risk_signals(
+            scenario_signal_timeline,
+            scenario_signal_resilience,
+        )
+        risk_signals["worst"] = detect_timeline_risk_signals(
+            worst_timeline,
+            resilience_summary["worst"],
+        )
+
+        scenario_fragility = detect_fragility_signal(
+            resilience_summary["baseline"],
+            scenario_signal_resilience,
+            "Scenario",
+        )
+        if scenario_fragility:
+            risk_signals["scenario"].append(scenario_fragility)
+            sort_risk_signals(risk_signals["scenario"])
+
+        worst_fragility = detect_fragility_signal(
+            resilience_summary["baseline"],
+            resilience_summary["worst"],
+            "Worst-case",
+        )
+        if worst_fragility:
+            risk_signals["worst"].append(worst_fragility)
+            sort_risk_signals(risk_signals["worst"])
+
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
@@ -327,6 +375,7 @@ def simulate(
         "expected": expected_timeline,
         "worst": worst_timeline,
         "resilience": resilience_summary,
+        "risk_signals": risk_signals,
     }
 
     request_payload = request.dict()
