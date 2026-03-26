@@ -1,8 +1,17 @@
+def _payload_value(payload, *keys, default=0):
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            return payload[key]
+    return default
+
+
 def calculate_hiring_impact(timeline_map, payload):
     """Specific math for headcount addition."""
-    start_month = payload.get("start_month", 1)
-    salary = payload.get("recurring_cost", 0)
-    recruiting_fee = payload.get("upfront_cost", 0)
+    start_month = _payload_value(payload, "start_month", "startMonth", default=1)
+    salary = _payload_value(payload, "recurring_cost", default=0)
+    if not salary:
+        salary = abs(min(_payload_value(payload, "impact", default=0), 0))
+    recruiting_fee = _payload_value(payload, "upfront_cost", default=0)
 
     for month_index in range(36):
         current_month = month_index + 1
@@ -15,16 +24,18 @@ def calculate_hiring_impact(timeline_map, payload):
                     timeline[month_index]["net_cash_flow"] -= recruiting_fee
 
             # BEST: Immediate high ROI
-            timeline_map["BEST"][month_index]["operating_income"] += (salary * 3) 
+            timeline_map["BEST"][month_index]["operating_income"] += (salary * 3)
+            timeline_map["BEST"][month_index]["net_cash_flow"] += (salary * 3)
             # EXPECTED: 2-month ramp-up
             if current_month >= start_month + 2:
                 timeline_map["EXPECTED"][month_index]["operating_income"] += (salary * 1.5)
+                timeline_map["EXPECTED"][month_index]["net_cash_flow"] += (salary * 1.5)
 
 def calculate_expansion_impact(timeline_map, payload):
     """Specific math for a new location/infrastructure."""
-    start_month = payload.get("start_month", 1)
-    buildout_cost = payload.get("upfront_cost", 0)
-    new_rent = payload.get("recurring_cost", 0)
+    start_month = _payload_value(payload, "start_month", "startMonth", default=1)
+    buildout_cost = _payload_value(payload, "upfront_cost", default=0)
+    new_rent = _payload_value(payload, "recurring_cost", default=0)
 
     for month_index in range(36):
         current_month = month_index + 1
@@ -39,8 +50,10 @@ def calculate_expansion_impact(timeline_map, payload):
             # High delay for Expansion returns
             if current_month >= start_month + 4:
                 timeline_map["BEST"][month_index]["operating_income"] += 45000
+                timeline_map["BEST"][month_index]["net_cash_flow"] += 45000
             if current_month >= start_month + 6:
                 timeline_map["EXPECTED"][month_index]["operating_income"] += 20000
+                timeline_map["EXPECTED"][month_index]["net_cash_flow"] += 20000
 
 def apply_event_wrapper(timeline_map, event_type, event_payload):
     """Main Dispatcher: Routes the event to the correct math function."""
@@ -70,8 +83,8 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
 
 def calculate_marketing_impact(timeline_map, payload):
     """Simple math for marketing campaigns."""
-    start_month = payload.get("startMonth", 1)
-    cost = payload.get("impact", 0) # Negative value from frontend
+    start_month = _payload_value(payload, "startMonth", "start_month", default=1)
+    cost = _payload_value(payload, "impact", default=0) # Negative value from frontend
     
     for month_index in range(len(timeline_map["EXPECTED"])):
         if month_index + 1 >= start_month:
@@ -82,8 +95,8 @@ def calculate_marketing_impact(timeline_map, payload):
 
 def calculate_cost_reduction_impact(timeline_map, payload):
     """Math for reducing fixed costs."""
-    start_month = payload.get("startMonth", 1)
-    savings = abs(payload.get("impact", 0))
+    start_month = _payload_value(payload, "startMonth", "start_month", default=1)
+    savings = abs(_payload_value(payload, "impact", default=0))
     
     for month_index in range(len(timeline_map["EXPECTED"])):
         if month_index + 1 >= start_month:
@@ -92,9 +105,9 @@ def calculate_cost_reduction_impact(timeline_map, payload):
                 timeline[month_index]["net_cash_flow"] += savings
 
 def calculate_inventory_impact(timeline_map, payload):
-    start_month = payload.get("startMonth", 1)
-    upfront = payload.get("upfront_cost", 0)
-    savings = abs(payload.get("impact", 0))
+    start_month = _payload_value(payload, "startMonth", "start_month", default=1)
+    upfront = _payload_value(payload, "upfront_cost", default=0)
+    savings = abs(_payload_value(payload, "impact", default=0))
 
     for month_index in range(len(timeline_map["EXPECTED"])):
         current_month = month_index + 1

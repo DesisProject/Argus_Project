@@ -132,6 +132,38 @@ def _get_user_scenario(db: Session, user_id: int, scenario_id: int) -> Scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
     return scenario
 
+
+def _get_active_scenario(db: Session, user_id: int) -> Optional[Scenario]:
+    return (
+        db.query(Scenario)
+        .filter(Scenario.user_id == user_id)
+        .order_by(Scenario.updated_at.desc(), Scenario.id.desc())
+        .first()
+    )
+
+
+def _decision_to_event_payload(decision: ScenarioDecision) -> Dict[str, Any]:
+    payload = {
+        "impact": decision.impact,
+        "startMonth": decision.start_month,
+        "start_month": decision.start_month,
+        "lag": decision.lag_months,
+        "lag_months": decision.lag_months,
+        "ramp": decision.ramp_months,
+        "ramp_months": decision.ramp_months,
+        "duration": decision.duration_months if decision.duration_months else "permanent",
+        "duration_months": decision.duration_months,
+    }
+
+    if decision.type in {"hire", "hiring"}:
+        payload["recurring_cost"] = abs(min(decision.impact, 0))
+        payload["upfront_cost"] = 0
+    elif decision.type in {"expand", "expansion"}:
+        payload["recurring_cost"] = abs(min(decision.impact, 0))
+        payload["upfront_cost"] = 0
+
+    return payload
+
 # --- AUTHENTICATION ROUTES ---
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -226,35 +258,37 @@ def simulate(
     baseline_timeline = year1 + year2 + year3
 
 
-    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
-    db_decisions = scenario.decisions if scenario else []
-    scenario_timeline = copy.deepcopy(baseline_timeline)
-    # This ensures "Best/Expected/Worst" reflect your persistent events
-    for d in db_decisions:
-        # Example: Applying a hiring event to the timeline
-        current_decision_data = {
-            "impact": d.impact,
-            "startMonth": d.start_month,
-            "lag": d.lag_months,
-            "ramp": d.ramp_months,
-            "duration": d.duration_months if d.duration_months else "permanent"
-        }
-        
-        temp_scenario_map = {
-            "BEST": scenario_timeline,
-            "EXPECTED": scenario_timeline,
-            "WORST": scenario_timeline
-        }
-        
+    selected_scenario = (
+        _get_user_scenario(db, current_user.id, request.scenario_id)
+        if request.scenario_id is not None
+        else _get_active_scenario(db, current_user.id)
+    )
+    db_decisions = (
+        sorted(selected_scenario.decisions, key=lambda decision: decision.id)
+        if selected_scenario
+        else []
+    )
+
+    scenario_best_timeline = copy.deepcopy(baseline_timeline)
+    scenario_expected_timeline = copy.deepcopy(baseline_timeline)
+    scenario_worst_timeline = copy.deepcopy(baseline_timeline)
+    scenario_map = {
+        "BEST": scenario_best_timeline,
+        "EXPECTED": scenario_expected_timeline,
+        "WORST": scenario_worst_timeline,
+    }
+
+    for decision in db_decisions:
         apply_event_wrapper(
-            temp_scenario_map, 
-            d.type, 
-            current_decision_data 
+            scenario_map,
+            decision.type,
+            _decision_to_event_payload(decision),
         )
-    
-    best_timeline = copy.deepcopy(baseline_timeline)
-    expected_timeline = copy.deepcopy(baseline_timeline)
-    worst_timeline = copy.deepcopy(baseline_timeline)
+
+    scenario_timeline = copy.deepcopy(scenario_expected_timeline)
+    best_timeline = copy.deepcopy(scenario_best_timeline)
+    expected_timeline = copy.deepcopy(scenario_expected_timeline)
+    worst_timeline = copy.deepcopy(scenario_worst_timeline)
 
     timeline_map = {
         "BEST": best_timeline,
@@ -271,9 +305,7 @@ def simulate(
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
 
-    if request.scenario_id is not None:
-        _get_user_scenario(db, current_user.id, request.scenario_id)
-
+    calculate_cash_metrics(scenario_timeline, starting_cash)
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
