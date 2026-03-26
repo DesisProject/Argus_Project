@@ -5,6 +5,28 @@ def _payload_value(payload, *keys, default=0):
     return default
 
 
+def _normalize_duration(duration_value):
+    if duration_value in (None, "", "permanent"):
+        return None
+    return int(duration_value)
+
+
+def _is_active_month(current_month, start_month, duration_months):
+    if current_month < start_month:
+        return False
+    if duration_months is None:
+        return True
+    return current_month < start_month + duration_months
+
+
+def _scenario_ramp_factor(current_month, effect_start_month, ramp_months):
+    if current_month < effect_start_month:
+        return 0.0
+    ramp_months = max(int(ramp_months), 1)
+    months_active = current_month - effect_start_month + 1
+    return min(months_active / ramp_months, 1.0)
+
+
 def calculate_hiring_impact(timeline_map, payload):
     """Specific math for headcount addition."""
     start_month = _payload_value(payload, "start_month", "startMonth", default=1)
@@ -82,16 +104,67 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
         calculate_inventory_impact(timeline_map, event_payload)
 
 def calculate_marketing_impact(timeline_map, payload):
-    """Simple math for marketing campaigns."""
-    start_month = _payload_value(payload, "startMonth", "start_month", default=1)
-    cost = _payload_value(payload, "impact", default=0) # Negative value from frontend
-    
-    for month_index in range(len(timeline_map["EXPECTED"])):
-        if month_index + 1 >= start_month:
-            for timeline in timeline_map.values():
-                # Apply the cost (which is negative in the library)
-                timeline[month_index]["operating_income"] += cost
-                timeline[month_index]["net_cash_flow"] += cost
+    """Marketing creates a temporary, delayed uplift that ramps over time."""
+    start_month = int(_payload_value(payload, "startMonth", "start_month", default=1))
+    impact_amount = float(_payload_value(payload, "impact", default=0))
+    upfront_cost = float(_payload_value(payload, "upfront_cost", default=0))
+    recurring_cost = float(_payload_value(payload, "recurring_cost", default=0))
+    lag_months = int(_payload_value(payload, "lag", "lag_months", default=0))
+    ramp_months = int(_payload_value(payload, "ramp", "ramp_months", default=1))
+    duration_months = _normalize_duration(
+        _payload_value(payload, "duration", "duration_months", default=None)
+    )
+
+    scenario_profiles = {
+        "BEST": {"multiplier": 1.25, "lag": max(lag_months - 1, 0), "ramp": max(ramp_months - 1, 1)},
+        "EXPECTED": {"multiplier": 1.0, "lag": lag_months, "ramp": max(ramp_months, 1)},
+        "WORST": {"multiplier": 0.5, "lag": lag_months + 1, "ramp": max(ramp_months + 1, 1)},
+    }
+
+    timeline_length = len(timeline_map["EXPECTED"])
+
+    for month_index in range(timeline_length):
+        current_month = month_index + 1
+
+        if not _is_active_month(current_month, start_month, duration_months):
+            continue
+
+        for timeline in timeline_map.values():
+            if current_month == start_month and upfront_cost:
+                timeline[month_index]["operating_income"] -= upfront_cost
+                timeline[month_index]["net_cash_flow"] -= upfront_cost
+
+            if recurring_cost:
+                timeline[month_index]["operating_income"] -= recurring_cost
+                timeline[month_index]["net_cash_flow"] -= recurring_cost
+
+        for scenario_name, scenario_config in scenario_profiles.items():
+            effect_start_month = start_month + scenario_config["lag"]
+            ramp_factor = _scenario_ramp_factor(
+                current_month,
+                effect_start_month,
+                scenario_config["ramp"],
+            )
+            if ramp_factor <= 0:
+                continue
+
+            active_timeline = timeline_map[scenario_name]
+            month_data = active_timeline[month_index]
+            revenue_lift = impact_amount * scenario_config["multiplier"] * ramp_factor
+
+            if month_data["revenue"] > 0:
+                cogs_ratio = month_data["cogs"] / month_data["revenue"]
+            else:
+                cogs_ratio = 0.0
+
+            incremental_cogs = revenue_lift * cogs_ratio
+            gross_profit_lift = revenue_lift - incremental_cogs
+
+            month_data["revenue"] += revenue_lift
+            month_data["cogs"] += incremental_cogs
+            month_data["gross_profit"] += gross_profit_lift
+            month_data["operating_income"] += gross_profit_lift
+            month_data["net_cash_flow"] += gross_profit_lift
 
 def calculate_cost_reduction_impact(timeline_map, payload):
     """Math for reducing fixed costs."""
