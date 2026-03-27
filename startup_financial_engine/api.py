@@ -19,6 +19,13 @@ from auth import verify_password, get_password_hash, create_access_token, SECRET
 # --- NEW IMPORTS FOR SIMULATION LOGIC ---
 from event_calculators import apply_event_wrapper
 from main import calculate_cash_metrics
+from mitigation_engine import generate_mitigation_suggestions
+from resilience import summarize_resilience
+from risk_signals import (
+    detect_fragility_signal,
+    detect_timeline_risk_signals,
+    sort_risk_signals,
+)
 
 app = FastAPI()
 app.add_middleware(
@@ -132,6 +139,50 @@ def _get_user_scenario(db: Session, user_id: int, scenario_id: int) -> Scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
     return scenario
 
+
+def _get_active_scenario(db: Session, user_id: int) -> Optional[Scenario]:
+    return (
+        db.query(Scenario)
+        .filter(Scenario.user_id == user_id)
+        .order_by(Scenario.updated_at.desc(), Scenario.id.desc())
+        .first()
+    )
+
+
+def _decision_to_event_payload(decision: ScenarioDecision) -> Dict[str, Any]:
+    payload = {
+        "impact": decision.impact,
+        "startMonth": decision.start_month,
+        "start_month": decision.start_month,
+        "lag": decision.lag_months,
+        "lag_months": decision.lag_months,
+        "ramp": decision.ramp_months,
+        "ramp_months": decision.ramp_months,
+        "duration": decision.duration_months if decision.duration_months else "permanent",
+        "duration_months": decision.duration_months,
+    }
+
+    if decision.type in {"hire", "hiring"}:
+        payload["recurring_cost"] = abs(min(decision.impact, 0))
+        payload["upfront_cost"] = 0
+    elif decision.type in {"expand", "expansion"}:
+        payload["recurring_cost"] = abs(min(decision.impact, 0))
+        payload["upfront_cost"] = 0
+
+    return payload
+
+
+def _decision_snapshot(decision: ScenarioDecision) -> Dict[str, Any]:
+    return {
+        "type": decision.type,
+        "name": decision.name,
+        "impact": decision.impact,
+        "start_month": decision.start_month,
+        "lag_months": decision.lag_months,
+        "ramp_months": decision.ramp_months,
+        "duration_months": decision.duration_months,
+    }
+
 # --- AUTHENTICATION ROUTES ---
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -226,35 +277,40 @@ def simulate(
     baseline_timeline = year1 + year2 + year3
 
 
-    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
-    db_decisions = scenario.decisions if scenario else []
-    scenario_timeline = copy.deepcopy(baseline_timeline)
-    # This ensures "Best/Expected/Worst" reflect your persistent events
-    for d in db_decisions:
-        # Example: Applying a hiring event to the timeline
-        current_decision_data = {
-            "impact": d.impact,
-            "startMonth": d.start_month,
-            "lag": d.lag_months,
-            "ramp": d.ramp_months,
-            "duration": d.duration_months if d.duration_months else "permanent"
-        }
-        
-        temp_scenario_map = {
-            "BEST": scenario_timeline,
-            "EXPECTED": scenario_timeline,
-            "WORST": scenario_timeline
-        }
-        
+    selected_scenario = (
+        _get_user_scenario(db, current_user.id, request.scenario_id)
+        if request.scenario_id is not None
+        else _get_active_scenario(db, current_user.id)
+    )
+    db_decisions = (
+        sorted(selected_scenario.decisions, key=lambda decision: decision.id)
+        if selected_scenario
+        else []
+    )
+    decision_snapshots = [_decision_snapshot(decision) for decision in db_decisions]
+    has_direct_event = bool(request.event_type and request.event_payload)
+    has_active_scenario = bool(db_decisions) or has_direct_event
+
+    scenario_best_timeline = copy.deepcopy(baseline_timeline)
+    scenario_expected_timeline = copy.deepcopy(baseline_timeline)
+    scenario_worst_timeline = copy.deepcopy(baseline_timeline)
+    scenario_map = {
+        "BEST": scenario_best_timeline,
+        "EXPECTED": scenario_expected_timeline,
+        "WORST": scenario_worst_timeline,
+    }
+
+    for decision in db_decisions:
         apply_event_wrapper(
-            temp_scenario_map, 
-            d.type, 
-            current_decision_data 
+            scenario_map,
+            decision.type,
+            _decision_to_event_payload(decision),
         )
-    
-    best_timeline = copy.deepcopy(baseline_timeline)
-    expected_timeline = copy.deepcopy(baseline_timeline)
-    worst_timeline = copy.deepcopy(baseline_timeline)
+
+    scenario_timeline = copy.deepcopy(scenario_expected_timeline)
+    best_timeline = copy.deepcopy(scenario_best_timeline)
+    expected_timeline = copy.deepcopy(scenario_expected_timeline)
+    worst_timeline = copy.deepcopy(scenario_worst_timeline)
 
     timeline_map = {
         "BEST": best_timeline,
@@ -271,8 +327,64 @@ def simulate(
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
 
-    if request.scenario_id is not None:
-        _get_user_scenario(db, current_user.id, request.scenario_id)
+    calculate_cash_metrics(scenario_timeline, starting_cash)
+    resilience_summary = {
+        "baseline": summarize_resilience(baseline_timeline),
+        "scenario": summarize_resilience(scenario_timeline),
+        "best": summarize_resilience(best_timeline),
+        "expected": summarize_resilience(expected_timeline),
+        "worst": summarize_resilience(worst_timeline),
+    }
+    scenario_signal_timeline = expected_timeline if has_direct_event else scenario_timeline
+    scenario_signal_resilience = (
+        resilience_summary["expected"] if has_direct_event else resilience_summary["scenario"]
+    )
+    risk_signals = {
+        "baseline": detect_timeline_risk_signals(
+            baseline_timeline,
+            resilience_summary["baseline"],
+        ),
+        "scenario": [],
+        "worst": [],
+    }
+
+    if has_active_scenario:
+        risk_signals["scenario"] = detect_timeline_risk_signals(
+            scenario_signal_timeline,
+            scenario_signal_resilience,
+        )
+        risk_signals["worst"] = detect_timeline_risk_signals(
+            worst_timeline,
+            resilience_summary["worst"],
+        )
+
+        scenario_fragility = detect_fragility_signal(
+            resilience_summary["baseline"],
+            scenario_signal_resilience,
+            "Scenario",
+        )
+        if scenario_fragility:
+            risk_signals["scenario"].append(scenario_fragility)
+            sort_risk_signals(risk_signals["scenario"])
+
+        worst_fragility = detect_fragility_signal(
+            resilience_summary["baseline"],
+            resilience_summary["worst"],
+            "Worst-case",
+        )
+        if worst_fragility:
+            risk_signals["worst"].append(worst_fragility)
+            sort_risk_signals(risk_signals["worst"])
+
+    mitigation_suggestions = generate_mitigation_suggestions(
+        request,
+        decision_snapshots,
+        {
+            "resilience": resilience_summary,
+        },
+        risk_signals,
+        has_direct_event,
+    )
 
     result_payload = {
         "user_email": current_user.email,
@@ -285,7 +397,10 @@ def simulate(
         "scenario_year3": scenario_timeline[24:36],
         "best": best_timeline,
         "expected": expected_timeline,
-        "worst": worst_timeline
+        "worst": worst_timeline,
+        "resilience": resilience_summary,
+        "risk_signals": risk_signals,
+        "mitigation_suggestions": mitigation_suggestions,
     }
 
     request_payload = request.dict()

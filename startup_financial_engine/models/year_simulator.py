@@ -16,6 +16,12 @@ class YearSimulator:
 
         income = IncomeStatement(revenue, cogs, fixed_exp)
         statement = income.compute()
+
+        for month_data in statement:
+            month_data["net_cash_flow"] = (
+                month_data["revenue"] - month_data["cogs"] - fixed_exp
+            )
+
         return statement
     
 def apply_growth(base_assumptions, forecast_assumptions):
