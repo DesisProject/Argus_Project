@@ -56,7 +56,7 @@ def compare_scenarios(timelines, starting_cash):
         fragility = detect_fragility_signal(baseline_summary, target_summary, name)
 
         if fragility:
-            print(f"⚠️ {name}: {fragility['message']}")
+            print(f" {name}: {fragility['message']}")
 
 
 def calculate_cash_metrics(timeline, starting_cash):
