@@ -12,6 +12,53 @@ from models.stress import StressTester
 
 import copy
 
+def compare_scenarios(timelines, starting_cash):
+    from resilience import summarize_resilience
+    from risk_signals import detect_fragility_signal
+
+    comparison = []
+
+    baseline_summary = summarize_resilience(timelines["BASELINE"])
+
+    for name, tl in timelines.items():
+        summary = summarize_resilience(tl)
+
+        comparison.append({
+            "scenario": name,
+            "ending_cash": tl[-1]["cash_balance"],
+            "min_cash": min(m["cash_balance"] for m in tl),
+            "runway_months": summary["runway_months"],
+            "volatility": volatility(tl),
+            "grade": summary["grade"]
+        })
+
+    # Sort by best outcome (growth)
+    comparison.sort(key=lambda x: x["ending_cash"], reverse=True)
+
+    print("\n================ SCENARIO COMPARISON ================")
+    for c in comparison:
+        print(
+            f"{c['scenario']}: "
+            f"Ending Cash={c['ending_cash']:,.2f}, "
+            f"Min Cash={c['min_cash']:,.2f}, "
+            f"Runway={c['runway_months']}, "
+            f"Volatility={c['volatility']:.2f}, "
+            f"Grade={c['grade']}"
+        )
+
+    print("\n--- DOWNSIDE ANALYSIS ---")
+
+    for name, tl in timelines.items():
+        if name == "BASELINE":
+            continue
+
+        target_summary = summarize_resilience(tl)
+        fragility = detect_fragility_signal(baseline_summary, target_summary, name)
+
+        if fragility:
+            print(f"⚠️ {name}: {fragility['message']}")
+
+
 def calculate_cash_metrics(timeline, starting_cash):
     current_cash = starting_cash
     for month_data in timeline:
@@ -271,7 +318,8 @@ def run_multi_year():
     for name, tl in timelines.items():
         print(f"{name}: {recommend_strategy(tl)}")
 
-    
+
+    compare_scenarios(timelines, starting_cash)
 
 
     print("Cost Spike Ending Cash:",
