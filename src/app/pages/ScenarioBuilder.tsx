@@ -29,6 +29,9 @@ import {
   deleteScenario,
   listScenarios,
   updateScenario,
+  addDecision as apiAddDecision,
+  getActiveDecisions,
+  deleteDecisionById,
   type Scenario,
 } from "../../services/simulationApi";
 
@@ -193,12 +196,8 @@ export function ScenarioBuilder() {
   const refreshScenarios = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch("http://localhost:8000/api/scenarios", {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      setScenarios(Array.isArray(data) ? data : []);
+      const data = await listScenarios();
+      setScenarios(Array.isArray(data) ? (data as ScenarioWithDetails[]) : []);
     } catch (err) {
       console.error("Failed to refresh scenarios:", err);
     } finally {
@@ -231,13 +230,13 @@ export function ScenarioBuilder() {
   // FETCH: Load from DB on refresh
  useEffect(() => {
   const loadDecisions = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch("http://localhost:8000/api/scenarios/active/decisions", {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      setDecisions(data); // These will now stay after refresh
+    try {
+      const data = await getActiveDecisions();
+      if (Array.isArray(data)) {
+        setDecisions(data as unknown as Decision[]);
+      }
+    } catch (err) {
+      console.error("Failed to load decisions:", err);
     }
     setLoading(false);
   };
@@ -246,35 +245,6 @@ export function ScenarioBuilder() {
 }, []);
 
 
-  // SAVE: Helper to sync state to DB
-  // src/app/pages/ScenarioBuilder.tsx
-
-const syncToDb = async (decisions: Decision | Decision[]) => {
-  try {
-    const decisionArray = Array.isArray(decisions) ? decisions : [decisions];
-    
-    for (const newDecision of decisionArray) {
-      const response = await fetch("http://localhost:8000/api/scenarios/decisions", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // If you have auth implemented:
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          scenario_id: activeScenarioId, // Ensure you have the current scenario ID
-          type: newDecision.type,
-          month: newDecision.startMonth,
-          payload: newDecision.impact // The backend expects 'payload'
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to sync decision');
-    }
-  } catch (error) {
-    console.error("Sync Error:", error);
-  }
-};
   const selectDecisionType = (type: string) => {
     const decision = decisionLibrary.find((entry) => entry.type === type);
     if (!decision) {
@@ -290,33 +260,20 @@ const syncToDb = async (decisions: Decision | Decision[]) => {
 const addDecision = async () => {
   if (!selectedType) return;
   const def = decisionLibrary.find((d) => d.type === selectedType);
-  
-  // Map frontend state to the JSON structure the backend expects
+
   const payload = {
     type: selectedType,
     name: def!.name,
     impact: config.impact,
-    startMonth: config.startMonth, // Backend maps this to start_month
+    startMonth: config.startMonth,
     lag: config.lag,
     ramp: config.ramp,
-    duration: config.duration
+    duration: config.duration,
   };
 
   try {
-    const res = await fetch("http://localhost:8000/api/scenarios/decisions", {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-      },
-      body: JSON.stringify(payload)
-    });
-    
-    if (!res.ok) throw new Error("Failed to save to DB");
-    const savedDecision = await res.json();
-    
-    // Use the ID returned from the database for the local state
-    setDecisions([...decisions, { ...payload, id: savedDecision.id.toString() }]);
+    const savedDecision = await apiAddDecision(payload);
+    setDecisions([...decisions, { ...payload, id: String(savedDecision.id) }]);
     setSelectedType(null);
   } catch (error) {
     console.error("Save Error:", error);
@@ -325,16 +282,8 @@ const addDecision = async () => {
 
 const deleteDecision = async (id: string) => {
   try {
-    const res = await fetch(`http://localhost:8000/api/scenarios/decisions/${id}`, {
-      method: 'DELETE',
-      headers: { 
-        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-      }
-    });
-
-    if (res.ok) {
-      setDecisions(decisions.filter((d) => d.id !== id));
-    }
+    await deleteDecisionById(id);
+    setDecisions(decisions.filter((d) => d.id !== id));
   } catch (error) {
     console.error("Delete Error:", error);
   }
@@ -354,23 +303,12 @@ const applyQuickStressTest = async () => {
     duration: stress.duration,
   }));
 
-  const savedResults = [];
-  
+  const savedResults: Decision[] = [];
+
   for (const payload of stressDecisions) {
     try {
-      const res = await fetch("http://localhost:8000/api/scenarios/decisions", {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}` 
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      if (res.ok) {
-        const saved = await res.json();
-        savedResults.push({ ...payload, id: saved.id.toString() });
-      }
+      const saved = await apiAddDecision(payload);
+      savedResults.push({ ...payload, id: String(saved.id) });
     } catch (error) {
       console.error("Failed to sync stress test decision:", error);
     }

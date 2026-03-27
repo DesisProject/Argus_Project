@@ -34,8 +34,7 @@ export interface MonthData {
 }
 
 export interface SimulationResponse {
-  baseline: MonthData[]; // Full 36-month baseline
-  scenario: MonthData[];
+  baseline: MonthData[];
   year1: MonthData[];
   year2: MonthData[];
   year3: MonthData[];
@@ -45,6 +44,11 @@ export interface SimulationResponse {
   best: MonthData[];
   expected: MonthData[];
   worst: MonthData[];
+  resilience?: Record<string, any>;
+  risk_signals?: Record<string, any[]>;
+  mitigation_suggestions?: any[];
+  simulation_run_id?: number;
+  user_email?: string;
 }
 
 export interface Scenario extends ScenarioPayload {
@@ -166,4 +170,86 @@ export async function listSimulationRuns(limit = 20): Promise<SimulationRun[]> {
   });
 
   return readJsonOrThrow<SimulationRun[]>(response);
+}
+
+export async function getLatestSimulation(): Promise<{
+  id?: number;
+  inputs: SimulationRequest | null;
+  result?: SimulationResponse;
+}> {
+  const response = await fetch(`${API_BASE}/simulation/latest`, {
+    headers: buildAuthHeaders(),
+  });
+
+  return readJsonOrThrow(response);
+}
+
+export async function deleteAllSimulationRuns(): Promise<void> {
+  const response = await fetch(`${API_BASE}/simulation-runs/all`, {
+    method: "DELETE",
+    headers: buildAuthHeaders(),
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const errorBody = await response.json().catch(() => null);
+    const detail =
+      errorBody && typeof errorBody.detail === "string"
+        ? errorBody.detail
+        : response.statusText;
+    throw new Error(detail || "Failed to delete simulation runs");
+  }
+}
+
+export async function deleteSimulationRun(runId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/simulation-runs/${runId}`, {
+    method: "DELETE",
+    headers: buildAuthHeaders(),
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const errorBody = await response.json().catch(() => null);
+    const detail =
+      errorBody && typeof errorBody.detail === "string"
+        ? errorBody.detail
+        : response.statusText;
+    throw new Error(detail || "Failed to delete simulation run");
+  }
+}
+
+export async function addDecision(
+  payload: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE}/scenarios/decisions`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  return readJsonOrThrow(response);
+}
+
+export async function getActiveDecisions(): Promise<Record<string, unknown>[]> {
+  const response = await fetch(`${API_BASE}/scenarios/active/decisions`, {
+    headers: buildAuthHeaders(),
+  });
+
+  return readJsonOrThrow(response);
+}
+
+export async function deleteDecisionById(
+  decisionId: string | number
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/scenarios/decisions/${decisionId}`, {
+    method: "DELETE",
+    headers: buildAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    const detail =
+      errorBody && typeof errorBody.detail === "string"
+        ? errorBody.detail
+        : response.statusText;
+    throw new Error(detail || "Failed to delete decision");
+  }
 }

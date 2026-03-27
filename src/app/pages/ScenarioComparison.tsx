@@ -1,13 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Slider } from "../components/ui/slider";
 import { Checkbox } from "../components/ui/checkbox";
-import { ShieldCheck, Lightbulb } from "lucide-react";
-import { generateMitigations } from "../services/mitigationEngine";
-import { AlertCircle} from "lucide-react";
+import { ShieldCheck, Lightbulb, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
-import { detectEarlyRisks } from "../services/riskDetector";
 import {
   LineChart,
   Line,
@@ -30,6 +27,11 @@ import {
 import { Badge } from "../components/ui/badge";
 import { AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { ResilienceScore } from "../components/ResilienceScore";
+import {
+  getLatestSimulation,
+  type SimulationResponse,
+  type MonthData,
+} from "../../services/simulationApi";
 
 interface ScenarioData {
   month: number;
@@ -47,65 +49,104 @@ interface VisibleLines {
 }
 
 export function ScenarioComparison() {
-  const [demandShockSeverity, setDemandShockSeverity] = useState([50]);
   const [visibleLines, setVisibleLines] = useState<VisibleLines>({
     baseline: true,
     best: true,
     expected: true,
     worst: true,
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [simResult, setSimResult] = useState<SimulationResponse | null>(null);
 
-  // Generate multi-scenario data (deterministic based on inputs)
-  const generateScenarioData = (): ScenarioData[] => {
-    const data: ScenarioData[] = [];
-    const startingCash = 500000;
-    const severityFactor = demandShockSeverity[0] / 100;
-
-    for (let month = 0; month <= 24; month++) {
-      // Baseline - no optimism or pessimism adjustments
-      let baselineCash = startingCash + month * 3000 - month * 1500;
-
-      // Best case scenario - optimistic revenue, lower costs
-      let bestCash = startingCash + month * 18000 - month * 2000;
-
-      // Expected case scenario - realistic projections
-      let expectedCash = startingCash + month * 8000 - month * 5000;
-
-      // Worst case scenario - affected by demand shock
-      let worstCash = startingCash - month * 8000 * (1 + severityFactor);
-
-      // Add some deterministic variability based on month
-      if (month > 6) {
-        baselineCash += (month - 6) * 500;
-        bestCash += (month - 6) * 4000;
-        expectedCash -= (month - 6) * 1500;
-        worstCash -= (month - 6) * 5000 * severityFactor;
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const latest = await getLatestSimulation();
+        if (latest.result) {
+          setSimResult(latest.result);
+        } else {
+          setError("No simulation data available. Run a simulation from the Dashboard first.");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load simulation data");
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchData();
+  }, []);
 
+  // Build chart data from the real simulation response
+  const scenarioData: ScenarioData[] = useMemo(() => {
+    if (!simResult) return [];
+
+    const baselineTimeline = simResult.baseline || [];
+    const bestTimeline = simResult.best || [];
+    const expectedTimeline = simResult.expected || [];
+    const worstTimeline = simResult.worst || [];
+
+    const length = Math.max(
+      baselineTimeline.length,
+      bestTimeline.length,
+      expectedTimeline.length,
+      worstTimeline.length
+    );
+
+    const data: ScenarioData[] = [];
+    for (let i = 0; i < length; i++) {
       data.push({
-        month,
-        baseline: Math.round(baselineCash),
-        best: Math.round(bestCash),
-        expected: Math.round(expectedCash),
-        worst: Math.round(worstCash),
+        month: i + 1,
+        baseline: baselineTimeline[i]?.cash_balance ?? 0,
+        best: bestTimeline[i]?.cash_balance ?? 0,
+        expected: expectedTimeline[i]?.cash_balance ?? 0,
+        worst: worstTimeline[i]?.cash_balance ?? 0,
       });
     }
-
     return data;
-  };
+  }, [simResult]);
 
-  const scenarioData = generateScenarioData();
+  // Extract risk signals and mitigations from the API response
+  const riskSignals = useMemo(() => {
+    const raw = simResult?.risk_signals;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    // Backend returns { baseline: [], scenario: [], worst: [] }
+    const all: any[] = [];
+    for (const key of Object.keys(raw)) {
+      const arr = raw[key];
+      if (Array.isArray(arr)) all.push(...arr);
+    }
+    return all;
+  }, [simResult]);
+
+  const mitigations = useMemo(() => {
+    const raw = simResult?.mitigation_suggestions;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    // Backend returns { baseline: [], scenario: [], worst: [] }
+    const all: any[] = [];
+    for (const key of Object.keys(raw as Record<string, any>)) {
+      const arr = (raw as Record<string, any>)[key];
+      if (Array.isArray(arr)) all.push(...arr);
+    }
+    return all;
+  }, [simResult]);
 
   const getRunway = (data: ScenarioData[], variant: keyof Omit<ScenarioData, 'month'>) => {
     const index = data.findIndex((d) => d[variant] < 0);
-    return index === -1 ? 24 : index;
+    return index === -1 ? data.length : index;
   };
 
   const getMinCash = (data: ScenarioData[], variant: keyof Omit<ScenarioData, 'month'>) => {
+    if (data.length === 0) return 0;
     return Math.min(...data.map((d) => d[variant]));
   };
 
   const getEndingCash = (data: ScenarioData[], variant: keyof Omit<ScenarioData, 'month'>) => {
+    if (data.length === 0) return 0;
     return data[data.length - 1][variant];
   };
 
@@ -121,104 +162,100 @@ export function ScenarioComparison() {
     setVisibleLines((prev) => ({ ...prev, [line]: !prev[line] }));
   };
 
-  // Calculate metrics for all scenarios
-  const baselineMetrics = {
-    runway: getRunway(scenarioData, "baseline"),
-    minCash: getMinCash(scenarioData, "baseline"),
-    endingCash: getEndingCash(scenarioData, "baseline"),
-  };
+  // Use backend resilience data if available, else derive from chart data
+  const baselineMetrics = useMemo(() => {
+    if (simResult?.resilience?.baseline) {
+      const r = simResult.resilience.baseline;
+      return {
+        runway: r.runway_months ?? getRunway(scenarioData, "baseline"),
+        minCash: r.min_cash ?? getMinCash(scenarioData, "baseline"),
+        endingCash: r.ending_cash ?? getEndingCash(scenarioData, "baseline"),
+      };
+    }
+    return {
+      runway: getRunway(scenarioData, "baseline"),
+      minCash: getMinCash(scenarioData, "baseline"),
+      endingCash: getEndingCash(scenarioData, "baseline"),
+    };
+  }, [scenarioData, simResult]);
 
-  const bestMetrics = {
+  const bestMetrics = useMemo(() => ({
     runway: getRunway(scenarioData, "best"),
     minCash: getMinCash(scenarioData, "best"),
     endingCash: getEndingCash(scenarioData, "best"),
-  };
+  }), [scenarioData]);
 
-  const expectedMetrics = {
+  const expectedMetrics = useMemo(() => ({
     runway: getRunway(scenarioData, "expected"),
     minCash: getMinCash(scenarioData, "expected"),
     endingCash: getEndingCash(scenarioData, "expected"),
-  };
+  }), [scenarioData]);
 
-  const worstMetrics = {
+  const worstMetrics = useMemo(() => ({
     runway: getRunway(scenarioData, "worst"),
     minCash: getMinCash(scenarioData, "worst"),
     endingCash: getEndingCash(scenarioData, "worst"),
-  };
+  }), [scenarioData]);
 
-  // Calculate deltas (Expected vs Baseline)
   const runwayDelta = expectedMetrics.runway - baselineMetrics.runway;
   const endingCashDelta = expectedMetrics.endingCash - baselineMetrics.endingCash;
 
   const comparisonData = [
     {
       variant: "Baseline",
-      minCash: baselineMetrics.minCash,
-      runway: baselineMetrics.runway,
-      endingCash: baselineMetrics.endingCash,
+      ...baselineMetrics,
       resilienceGrade: getResilienceGrade(baselineMetrics.runway, baselineMetrics.minCash),
       delta: null,
     },
     {
       variant: "Best Case",
-      minCash: bestMetrics.minCash,
-      runway: bestMetrics.runway,
-      endingCash: bestMetrics.endingCash,
+      ...bestMetrics,
       resilienceGrade: getResilienceGrade(bestMetrics.runway, bestMetrics.minCash),
       delta: null,
     },
     {
       variant: "Expected Case",
-      minCash: expectedMetrics.minCash,
-      runway: expectedMetrics.runway,
-      endingCash: expectedMetrics.endingCash,
+      ...expectedMetrics,
       resilienceGrade: getResilienceGrade(expectedMetrics.runway, expectedMetrics.minCash),
-      delta: {
-        runway: runwayDelta,
-        endingCash: endingCashDelta,
-      },
+      delta: { runway: runwayDelta, endingCash: endingCashDelta },
     },
     {
       variant: "Worst Case",
-      minCash: worstMetrics.minCash,
-      runway: worstMetrics.runway,
-      endingCash: worstMetrics.endingCash,
+      ...worstMetrics,
       resilienceGrade: getResilienceGrade(worstMetrics.runway, worstMetrics.minCash),
       delta: null,
     },
   ];
-  const mitigations = useMemo(() => {
-    return generateMitigations(
-      scenarioData.map(d => ({ cash_balance: d.expected })),
-      scenarioData.map(d => ({ cash_balance: d.worst }))
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+        <span className="ml-3 text-slate-400">Loading simulation data…</span>
+      </div>
     );
-  }, [scenarioData]);
+  }
 
-  const riskSignals = useMemo(() => {
-  // Comparing "Expected" or "Worst" case against the "Baseline"
-  return detectEarlyRisks(
-    scenarioData.map(d => ({ cash_balance: d.baseline, operating_expenses: 5000 })), // Simplified expense for demo
-    scenarioData.map(d => ({ cash_balance: d.worst, operating_expenses: 8000 }))
-  );
-}, [scenarioData]);
-
-  const riskDrivers = [
-    {
-      factor: "Hiring increased payroll",
-      impact: "High",
-      monthlyEffect: "-$15,000",
-    },
-    {
-      factor: "Demand shock reduced revenue",
-      impact: "Critical",
-      monthlyEffect: `-$${Math.round(20000 * (demandShockSeverity[0] / 100)).toLocaleString()}`,
-    },
-    {
-      factor: "Fundraising delay created cash gap",
-      impact: "Medium",
-      monthlyEffect: "-$10,000",
-    },
-  ];
+  if (error || scenarioData.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-3xl font-semibold text-slate-100">Scenario Comparison</h2>
+          <p className="text-slate-400 mt-1">
+            Compare best, expected, and worst case scenarios under uncertainty
+          </p>
+        </div>
+        <Card className="shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 text-amber-400">
+              <AlertCircle className="w-5 h-5" />
+              <p>{error || "No simulation data yet. Run a simulation from the Dashboard to see comparisons."}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -230,7 +267,7 @@ export function ScenarioComparison() {
           Compare best, expected, and worst case scenarios under uncertainty
         </p>
       </div>
-      
+
       {/* Variant Selector */}
       <div className="flex gap-3">
         <Button
@@ -311,7 +348,9 @@ export function ScenarioComparison() {
                       ? "Best"
                       : name === "expected"
                         ? "Expected"
-                        : "Worst",
+                        : name === "worst"
+                          ? "Worst"
+                          : "Baseline",
                   ]}
                   contentStyle={{
                     backgroundColor: "#1e293b",
@@ -324,11 +363,13 @@ export function ScenarioComparison() {
                 <Legend
                   wrapperStyle={{ paddingTop: "20px", color: "#94a3b8" }}
                   formatter={(value) =>
-                    value === "best"
-                      ? "Best Case"
-                      : value === "expected"
-                        ? "Expected Case"
-                        : "Worst Case"
+                    value === "baseline"
+                      ? "Baseline"
+                      : value === "best"
+                        ? "Best Case"
+                        : value === "expected"
+                          ? "Expected Case"
+                          : "Worst Case"
                   }
                 />
                 <ReferenceLine
@@ -342,6 +383,17 @@ export function ScenarioComparison() {
                     fill: "#ef4444",
                   }}
                 />
+                {visibleLines.baseline && (
+                  <Line
+                    type="monotone"
+                    dataKey="baseline"
+                    stroke="#94a3b8"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="baseline"
+                  />
+                )}
                 {visibleLines.best && (
                   <Line
                     type="monotone"
@@ -455,46 +507,49 @@ export function ScenarioComparison() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Risk Drivers */}
+        {/* Risk Signals from Backend */}
         <Card className="shadow-sm">
           <CardHeader>
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <CardTitle>Risk Drivers</CardTitle>
+              <CardTitle>Risk Signals</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {riskDrivers.map((driver, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between py-3 border-b border-slate-700 last:border-b-0"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium text-slate-100">
-                      {driver.factor}
-                    </div>
-                    <div className="text-sm text-slate-400 mt-1">
-                      Monthly effect: {driver.monthlyEffect}
-                    </div>
-                  </div>
-                  <Badge
-                    variant={
-                      driver.impact === "Critical"
-                        ? "destructive"
-                        : driver.impact === "High"
-                          ? "secondary"
-                          : "outline"
-                    }
+            {riskSignals.length === 0 ? (
+              <p className="text-slate-400 text-sm">No risk signals detected for current scenario.</p>
+            ) : (
+              <div className="space-y-4">
+                {riskSignals.map((signal: any, index: number) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between py-3 border-b border-slate-700 last:border-b-0"
                   >
-                    {driver.impact}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-slate-100">
+                        {signal.title || signal.signal || "Risk Signal"}
+                      </div>
+                      <div className="text-sm text-slate-400 mt-1">
+                        {signal.message || signal.detail || ""}
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        signal.level === "critical" || signal.severity === "critical"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {signal.level || signal.severity || "warning"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
+        {/* Mitigation Suggestions from Backend */}
         <Card className="border-blue-900/30 bg-blue-950/10 shadow-sm">
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -503,78 +558,28 @@ export function ScenarioComparison() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {mitigations.map((sug, idx) => (
-                <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-slate-700">
-                  <h4 className="font-bold text-blue-400 mb-1">{sug.strategy}</h4>
-                  <p className="text-sm text-slate-100 mb-2">{sug.impact}</p>
-                  <div className="flex items-start gap-2 text-xs text-slate-400 italic">
-                    <ShieldCheck className="w-3 h-3 mt-0.5 text-amber-500" />
-                    <span>Trade-off: {sug.tradeOff}</span>
+            {mitigations.length === 0 ? (
+              <p className="text-slate-400 text-sm">No mitigation suggestions available yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {mitigations.map((sug: any, idx: number) => (
+                  <div key={idx} className="p-4 rounded-lg bg-slate-900/50 border border-slate-700">
+                    <h4 className="font-bold text-blue-400 mb-1">
+                      {sug.strategy || sug.title || "Suggestion"}
+                    </h4>
+                    <p className="text-sm text-slate-100 mb-2">
+                      {sug.impact || sug.description || ""}
+                    </p>
+                    {(sug.tradeOff || sug.trade_off) && (
+                      <div className="flex items-start gap-2 text-xs text-slate-400 italic">
+                        <ShieldCheck className="w-3 h-3 mt-0.5 text-amber-500" />
+                        <span>Trade-off: {sug.tradeOff || sug.trade_off}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Interactive Demand Shock Slider */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle>Demand Shock Severity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm text-slate-400">
-                  Adjust severity to see impact on projections
-                </span>
-                <span className="font-semibold text-lg text-slate-100">
-                  {demandShockSeverity[0]}%
-                </span>
+                ))}
               </div>
-              <Slider
-                value={demandShockSeverity}
-                onValueChange={setDemandShockSeverity}
-                max={100}
-                step={5}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-slate-500 mt-2">
-                <span>Mild</span>
-                <span>Moderate</span>
-                <span>Severe</span>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-700">
-              <div className="text-sm text-slate-400 mb-2">
-                Current Impact Analysis
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Revenue reduction:</span>
-                  <span className="font-medium text-red-400">
-                    -{demandShockSeverity[0]}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Monthly loss:</span>
-                  <span className="font-medium text-red-400">
-                    -$
-                    {Math.round(
-                      20000 * (demandShockSeverity[0] / 100)
-                    ).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Recovery timeline:</span>
-                  <span className="font-medium text-slate-100">
-                    {Math.round((demandShockSeverity[0] / 10) + 3)} months
-                  </span>
-                </div>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>
