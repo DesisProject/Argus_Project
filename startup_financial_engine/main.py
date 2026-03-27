@@ -6,6 +6,10 @@ from models.assumptions import StartupAssumptions
 from models.forecast import ForecastAssumptions
 from models.year_simulator import YearSimulator, apply_growth
 from models.decisions import InternalDecision, DecisionImpact 
+from models.audit import AuditEngine
+from models.alerts import generate_alerts
+from models.stress import StressTester
+
 import copy
 
 def calculate_cash_metrics(timeline, starting_cash):
@@ -21,6 +25,31 @@ def calculate_cash_metrics(timeline, starting_cash):
             month_data["runway_months"] = current_cash / burn_rate
         else: 
             month_data["runway_months"] = 999 # Profitable, safe runway!
+
+def min_cash(timeline):
+    return min(m["cash_balance"] for m in timeline)
+
+def first_runway_breach(timeline, threshold=3):
+    for m in timeline:
+        if m["runway_months"] < threshold:
+            return m["month"]
+    return None
+
+def volatility(timeline):
+    flows = [m["net_cash_flow"] for m in timeline]
+    mean = sum(flows) / len(flows)
+    var = sum((x - mean)**2 for x in flows) / len(flows)
+    return var ** 0.5
+
+def recommend_strategy(timeline):
+    end_cash = timeline[-1]["cash_balance"]
+    min_c = min_cash(timeline)
+
+    if end_cash < 0:
+        return "CRITICAL: Raise funds or cut costs"
+    if min_c < 10000:
+        return "WARNING: Low safety buffer"
+    return "Healthy"
 
 def run_multi_year():
 
@@ -146,6 +175,107 @@ def run_multi_year():
     calculate_cash_metrics(expected_timeline, starting_cash)
     calculate_cash_metrics(worst_timeline, starting_cash)
 
+    audit_engine = AuditEngine()
+
+    print("\n================ AUDIT + ALERTS ================")
+
+    timelines = {
+        "BASELINE": baseline_timeline,
+        "BEST": best_timeline,
+        "EXPECTED": expected_timeline,
+        "WORST": worst_timeline
+    }
+
+    for name, tl in timelines.items():
+        print(f"\n--- {name} ---")
+
+        # AUDIT
+        issues = audit_engine.run_audit(tl)
+        print("Audit Issues:")
+        for issue in issues:
+            print(" -", issue)
+
+        # ALERTS
+        alerts = generate_alerts(tl)
+        print("Alerts:")
+        for alert in alerts:
+            print(" -", alert)
+
+    stress = StressTester()
+
+    print("\n================ STRESS TEST ================")
+
+    # Demand crash scenario
+    shock_assumptions = stress.apply_shock(base_assumptions, "demand_crash")
+    shock_timeline = YearSimulator(shock_assumptions).run_year()
+
+    calculate_cash_metrics(shock_timeline, starting_cash)
+
+    print("Demand Crash Ending Cash:",
+        shock_timeline[-1]["cash_balance"])
+
+
+    # Cost spike scenario
+    shock_assumptions2 = stress.apply_shock(base_assumptions, "cost_spike")
+    shock_timeline2 = YearSimulator(shock_assumptions2).run_year()
+
+    calculate_cash_metrics(shock_timeline2, starting_cash)
+
+    print("\n================ MONTE CARLO ================")
+
+    mc_results = stress.monte_carlo(base_assumptions, starting_cash, simulations=50)
+
+    print("Worst Case:", min(mc_results))
+    print("Best Case:", max(mc_results))
+    print("Average:", sum(mc_results)/len(mc_results))
+
+    print("\n================ DECISION RANKING ================")
+
+    baseline_cash = baseline_timeline[-1]["cash_balance"]
+
+    results = []
+
+    for name, tl in timelines.items():
+        if name == "BASELINE":
+            continue
+        
+        improvement = tl[-1]["cash_balance"] - baseline_cash
+        results.append((name, improvement))
+
+    # Sort best → worst
+    results.sort(key=lambda x: x[1], reverse=True)
+
+    for name, value in results:
+        print(f"{name}: {value:+,.2f}")
+
+    print("\n================ MIN CASH (RISK) ================")
+
+    for name, tl in timelines.items():
+        print(f"{name}: {min_cash(tl):,.2f}")
+
+    
+    print("\n================ RUNWAY RISK ================")
+
+    for name, tl in timelines.items():
+        breach = first_runway_breach(tl)
+        print(f"{name}: Runway <3 months at:", breach)
+
+    
+    print("\n================ VOLATILITY ================")
+
+    for name, tl in timelines.items():
+        print(f"{name}: {volatility(tl):,.2f}")
+
+    print("\n================ STRATEGY ================")
+
+    for name, tl in timelines.items():
+        print(f"{name}: {recommend_strategy(tl)}")
+
+    
+
+
+    print("Cost Spike Ending Cash:",
+        shock_timeline2[-1]["cash_balance"])
     # 5. Print the Results!
     print(f"\n--- SIMULATION RESULTS: {hiring_decision.name} ---")
     print(f"Starting Cash: ${starting_cash:,.2f}\n")
@@ -154,6 +284,7 @@ def run_multi_year():
     print(f"BEST:     Ending Cash: ${best_timeline[-1]['cash_balance']:,.2f}")
     print(f"EXPECTED: Ending Cash: ${expected_timeline[-1]['cash_balance']:,.2f}")
     print(f"WORST:    Ending Cash: ${worst_timeline[-1]['cash_balance']:,.2f}\n")
+
 
     print("\n--- DEBUG (FIRST 6 MONTHS) ---")
 
