@@ -183,7 +183,7 @@ export function ScenarioBuilder() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   const [config, setConfig] = useState({
     impact: 0,
     startMonth: 1,
@@ -228,21 +228,21 @@ export function ScenarioBuilder() {
   };
 
   // FETCH: Load from DB on refresh
- useEffect(() => {
-  const loadDecisions = async () => {
-    try {
-      const data = await getActiveDecisions();
-      if (Array.isArray(data)) {
-        setDecisions(data as unknown as Decision[]);
+  useEffect(() => {
+    const loadDecisions = async () => {
+      try {
+        const data = await getActiveDecisions();
+        if (Array.isArray(data)) {
+          setDecisions(data as unknown as Decision[]);
+        }
+      } catch (err) {
+        console.error("Failed to load decisions:", err);
       }
-    } catch (err) {
-      console.error("Failed to load decisions:", err);
-    }
-    setLoading(false);
-  };
-  loadDecisions();
-  refreshScenarios();
-}, []);
+      setLoading(false);
+    };
+    loadDecisions();
+    refreshScenarios();
+  }, []);
 
 
   const selectDecisionType = (type: string) => {
@@ -255,67 +255,69 @@ export function ScenarioBuilder() {
     setConfig((current) => ({ ...current, impact: decision.defaultImpact }));
   };
 
-// src/app/pages/ScenarioBuilder.tsx
+  // src/app/pages/ScenarioBuilder.tsx
 
-const addDecision = async () => {
-  if (!selectedType) return;
-  const def = decisionLibrary.find((d) => d.type === selectedType);
+  const addDecision = async () => {
+    if (!selectedType) return;
+    const def = decisionLibrary.find((d) => d.type === selectedType);
 
-  const payload = {
-    type: selectedType,
-    name: def!.name,
-    impact: config.impact,
-    startMonth: config.startMonth,
-    lag: config.lag,
-    ramp: config.ramp,
-    duration: config.duration,
+    const payload = {
+      type: selectedType,
+      name: def!.name,
+      impact: config.impact,
+      startMonth: config.startMonth,
+      lag: config.lag,
+      ramp: config.ramp,
+      duration: config.duration,
+    };
+
+    try {
+      const savedDecision = await apiAddDecision(payload);
+      setDecisions([...decisions, { ...payload, id: String(savedDecision.id) }]);
+      setSelectedType(null);
+    } catch (error) {
+      console.error("Save Error:", error);
+    }
   };
 
-  try {
-    const savedDecision = await apiAddDecision(payload);
-    setDecisions([...decisions, { ...payload, id: String(savedDecision.id) }]);
-    setSelectedType(null);
-  } catch (error) {
-    console.error("Save Error:", error);
-  }
-};
-
-const deleteDecision = async (id: string) => {
-  try {
-    await deleteDecisionById(id);
-    setDecisions(decisions.filter((d) => d.id !== id));
-  } catch (error) {
-    console.error("Delete Error:", error);
-  }
-};
+  // Replace deleteDecisionFromEditor with this logic
+  const deleteDecision = async (id: string) => {
+    try {
+      await deleteDecisionById(id); // Correctly calls DELETE /api/scenarios/decisions/{id}
+      setDecisions(prev => prev.filter((d) => d.id !== id));
+      // IMPORTANT: Re-run simulation or refresh state here if needed
+    } catch (error) {
+      console.error("Delete Error:", error);
+    }
+  };
 
   // Quick Stress Test - Apply all three stress scenarios at once
-// src/app/pages/ScenarioBuilder.tsx
+  // src/app/pages/ScenarioBuilder.tsx
 
-const applyQuickStressTest = async () => {
-  const stressDecisions = stressLibrary.map((stress, index) => ({
-    type: stress.type,
-    name: stress.name,
-    impact: stress.defaultImpact,
-    startMonth: 1 + index * 2,
-    lag: 0,
-    ramp: 1,
-    duration: stress.duration,
-  }));
+  const applyQuickStressTest = async () => {
+    const stressDecisions = stressLibrary.map((stress, index) => ({
+      type: stress.type,
+      name: stress.name,
+      impact: stress.defaultImpact,
+      startMonth: 1 + index * 2,
+      lag: 0,
+      ramp: 1,
+      duration: stress.duration,
+    }));
 
-  const savedResults: Decision[] = [];
+    const savedResults: Decision[] = [];
 
-  for (const payload of stressDecisions) {
-    try {
-      const saved = await apiAddDecision(payload);
-      savedResults.push({ ...payload, id: String(saved.id) });
-    } catch (error) {
-      console.error("Failed to sync stress test decision:", error);
+    for (const payload of stressDecisions) {
+      try {
+        const saved = await apiAddDecision(payload);
+        savedResults.push({ ...payload, id: String(saved.id) });
+      } catch (error) {
+        console.error("Failed to sync stress test decision:", error);
+      }
     }
-  }
 
-  setDecisions([...decisions, ...savedResults]);
-};
+    setDecisions([...decisions, ...savedResults]);
+  };
   // Add individual stress test
   const addStressTest = (stressType: string) => {
     const stress = stressLibrary.find((entry) => entry.type === stressType);
@@ -517,9 +519,8 @@ const applyQuickStressTest = async () => {
                 <button
                   key={decision.type}
                   onClick={() => selectDecisionType(decision.type)}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${decision.color} ${
-                    selectedType === decision.type ? "ring-2 ring-blue-500" : ""
-                  }`}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${decision.color} ${selectedType === decision.type ? "ring-2 ring-blue-500" : ""
+                    }`}
                 >
                   <Icon className="w-6 h-6 mb-2" />
                   <div className="font-medium">{decision.name}</div>
@@ -721,7 +722,7 @@ const applyQuickStressTest = async () => {
                         </div>
                       </div>
                       <button
-                        onClick={() => deleteDecisionFromEditor(decision.id)}
+                        onClick={() => deleteDecision(decision.id)} // Change from deleteDecisionFromEditor to deleteDecision
                         className="p-2 hover:bg-red-900/30 rounded-lg transition-colors"
                         type="button"
                       >
