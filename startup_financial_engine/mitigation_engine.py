@@ -32,6 +32,7 @@ def _normalize_event_type(event_type):
         "reduce": "cost_reduction",
         "cost_reduction": "cost_reduction",
         "inventory": "inventory",
+        "automation": "automation",
     }
     return aliases.get(normalized, normalized)
 

@@ -229,6 +229,9 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
     elif event == "inventory":
         calculate_inventory_impact(timeline_map, event_payload)
 
+    elif event == "automation":
+        calculate_automation_impact(timeline_map, event_payload)
+        
     if event in ["market_downturn", "demand_crash", "customer_churn", "funding_delay"]:
         calculate_stress_impact(timeline_map, event, event_payload)
 
@@ -318,6 +321,34 @@ def calculate_cost_reduction_impact(timeline_map, payload):
                 timeline_map[scenario_name][month_index],
                 savings_lift,
             )
+
+def calculate_automation_impact(timeline_map, payload):
+    """Automation improves efficiency, reducing variable costs (COGS) over time."""
+    start_month = int(_payload_value(payload, "startMonth", "start_month", default=1))
+    # 'impact' here represents the monthly savings amount
+    savings = abs(float(_payload_value(payload, "impact", default=0)))
+    lag_months = int(_payload_value(payload, "lag", "lag_months", default=0))
+    ramp_months = int(_payload_value(payload, "ramp", "ramp_months", default=1))
+    duration_months = _normalize_duration(
+        _payload_value(payload, "duration", "duration_months", default=None)
+    )
+    scenario_profiles = _build_scenario_profiles(lag_months, ramp_months)
+
+    for month_index in range(len(timeline_map["EXPECTED"])):
+        current_month = month_index + 1
+        if not _is_active_month(current_month, start_month, duration_months):
+            continue
+
+        for scenario_name, scenario_config in scenario_profiles.items():
+            effect_start_month = start_month + scenario_config["lag"]
+            ramp_factor = _scenario_ramp_factor(
+                current_month,
+                effect_start_month,
+                scenario_config["ramp"],
+            )
+            # Apply savings to COGS
+            savings_lift = savings * scenario_config["multiplier"] * ramp_factor
+            _apply_cogs_savings(timeline_map[scenario_name][month_index], savings_lift)
 
 def calculate_inventory_impact(timeline_map, payload):
     """Inventory spend improves margins through lower product cost."""
