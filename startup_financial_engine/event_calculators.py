@@ -1,3 +1,5 @@
+from models.stress import StressTester
+
 def _payload_value(payload, *keys, default=0):
     for key in keys:
         if key in payload and payload[key] is not None:
@@ -167,6 +169,40 @@ def calculate_expansion_impact(timeline_map, payload):
             revenue_lift = impact_amount * scenario_config["multiplier"] * ramp_factor
             _apply_revenue_lift(timeline_map[scenario_name][month_index], revenue_lift)
 
+def calculate_stress_impact(timeline_map, shock_type, payload):
+    """
+    Applies shocks from the StressTester logic to the active simulation timelines.
+    """
+    tester = StressTester()
+    start_month = int(_payload_value(payload, "startMonth", "start_month", default=1))
+    duration = _normalize_duration(_payload_value(payload, "duration", "duration_months", default=None))
+    
+    # Existing logic for standard numeric impacts
+    impact = float(_payload_value(payload, "impact", default=0))
+    
+    for month_index in range(len(timeline_map["EXPECTED"])):
+        current_month = month_index + 1
+        
+        if _is_active_month(current_month, start_month, duration):
+            for scenario_name, timeline in timeline_map.items():
+                month_data = timeline[month_index]
+                
+                # SPECIFIC LOGIC FOR DEMAND CRASH (from StressTester)
+                if shock_type == "demand_crash":
+                    # The StressTester defines demand_crash as a 50% reduction
+                    # We apply this to the current month's revenue and COGS
+                    original_revenue = month_data["revenue"]
+                    month_data["revenue"] *= 0.5
+                    month_data["cogs"] *= 0.5 # Assuming variable costs drop with demand
+                    
+                    revenue_loss = month_data["revenue"] - original_revenue
+                    month_data["gross_profit"] = month_data["revenue"] - month_data["cogs"]
+                    _apply_operating_delta(month_data, revenue_loss)
+                else:
+                    # Fallback for other stress types (market_downturn, etc.)
+                    month_data["operating_income"] += impact
+                    month_data["net_cash_flow"] += impact
+
 def apply_event_wrapper(timeline_map, event_type, event_payload):
     """Main Dispatcher: Routes the event to the correct math function."""
     if not event_type or not event_payload:
@@ -192,6 +228,13 @@ def apply_event_wrapper(timeline_map, event_type, event_payload):
 
     elif event == "inventory":
         calculate_inventory_impact(timeline_map, event_payload)
+
+    if event in ["market_downturn", "demand_crash", "customer_churn", "funding_delay"]:
+        calculate_stress_impact(timeline_map, event, event_payload)
+
+
+
+
 
 def calculate_marketing_impact(timeline_map, payload):
     """Marketing creates a temporary, delayed uplift that ramps over time."""

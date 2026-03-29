@@ -240,6 +240,8 @@ def simulate(
     from models.assumptions import StartupAssumptions
     from models.forecast import ForecastAssumptions
     from models.year_simulator import YearSimulator, apply_growth
+    from models.stress import StressTester
+    tester = StressTester()
 
     # 1. Map Assumptions
     base = StartupAssumptions(
@@ -386,6 +388,8 @@ def simulate(
         has_direct_event,
     )
 
+    mc_results = tester.monte_carlo(base, starting_cash, simulations=50)
+
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
@@ -401,6 +405,7 @@ def simulate(
         "resilience": resilience_summary,
         "risk_signals": risk_signals,
         "mitigation_suggestions": mitigation_suggestions,
+        "monte_carlo_outcomes": mc_results,
     }
 
     request_payload = request.dict()

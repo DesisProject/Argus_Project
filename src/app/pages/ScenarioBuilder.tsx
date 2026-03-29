@@ -141,6 +141,15 @@ const stressLibrary = [
     duration: "6",
     color: "border-amber-500/50 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40",
   },
+  {
+    type: "demand_crash", // Matches the backend check above
+    name: "Critical Demand Crash",
+    icon: TrendingDown,
+    description: "Sudden 50% drop in sales volume (uses StressTester engine)",
+    defaultImpact: 0, // Impact is calculated by the % drop in backend, not a flat number
+    duration: "6",
+    color: "border-red-600 bg-red-950/40 text-red-100 hover:bg-red-900/60",
+  },
 ];
 
 function fromApiDecision(decision: ScenarioDecisionPayload & { id?: number }): Decision {
@@ -319,14 +328,13 @@ export function ScenarioBuilder() {
     setDecisions([...decisions, ...savedResults]);
   };
   // Add individual stress test
-  const addStressTest = (stressType: string) => {
-    const stress = stressLibrary.find((entry) => entry.type === stressType);
-    if (!stress) {
-      return;
-    }
+  // Inside ScenarioBuilder.tsx
 
-    const newDecision: Decision = {
-      id: `stress_${Date.now()}`,
+  const addStressTest = async (stressType: string) => {
+    const stress = stressLibrary.find((entry) => entry.type === stressType);
+    if (!stress) return;
+
+    const payload = {
       type: stress.type,
       name: stress.name,
       impact: stress.defaultImpact,
@@ -334,10 +342,14 @@ export function ScenarioBuilder() {
       lag: 0,
       ramp: 1,
       duration: stress.duration,
-      isStressTest: true,
     };
 
-    setDecisions((current) => [...current, newDecision]);
+    try {
+      const saved = await apiAddDecision(payload); // Persist to DB
+      setDecisions((current) => [...current, fromApiDecision(saved as any)]);
+    } catch (err) {
+      console.error("Failed to add stress test:", err);
+    }
   };
 
   const deleteDecisionFromEditor = (id: string) => {
@@ -647,7 +659,7 @@ export function ScenarioBuilder() {
           </Button>
         </CardHeader>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {stressLibrary.map((stress) => {
               const Icon = stress.icon;
               return (
