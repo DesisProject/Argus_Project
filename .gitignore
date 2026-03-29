@@ -1,4 +1,24 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Python
 **/__pycache__/**
 **/venv/**
+**/.venv/**
+*.pyc
+
+# Environment
 .env
+.env.*
+
+# Build output
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
