@@ -29,6 +29,9 @@ import {
   deleteScenario,
   listScenarios,
   updateScenario,
+  addDecision as apiAddDecision,
+  getActiveDecisions,
+  deleteDecisionById,
   type Scenario,
 } from "../../services/simulationApi";
 
@@ -138,6 +141,15 @@ const stressLibrary = [
     duration: "6",
     color: "border-amber-500/50 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40",
   },
+  {
+    type: "demand_crash", // Matches the backend check above
+    name: "Critical Demand Crash",
+    icon: TrendingDown,
+    description: "Sudden 50% drop in sales volume (uses StressTester engine)",
+    defaultImpact: 0, // Impact is calculated by the % drop in backend, not a flat number
+    duration: "6",
+    color: "border-red-600 bg-red-950/40 text-red-100 hover:bg-red-900/60",
+  },
 ];
 
 function fromApiDecision(decision: ScenarioDecisionPayload & { id?: number }): Decision {
@@ -180,7 +192,7 @@ export function ScenarioBuilder() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   const [config, setConfig] = useState({
     impact: 0,
     startMonth: 1,
@@ -193,12 +205,8 @@ export function ScenarioBuilder() {
   const refreshScenarios = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch("http://localhost:8000/api/scenarios", {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      setScenarios(Array.isArray(data) ? data : []);
+      const data = await listScenarios();
+      setScenarios(Array.isArray(data) ? (data as ScenarioWithDetails[]) : []);
     } catch (err) {
       console.error("Failed to refresh scenarios:", err);
     } finally {
@@ -229,52 +237,23 @@ export function ScenarioBuilder() {
   };
 
   // FETCH: Load from DB on refresh
- useEffect(() => {
-  const loadDecisions = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch("http://localhost:8000/api/scenarios/active/decisions", {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      setDecisions(data); // These will now stay after refresh
-    }
-    setLoading(false);
-  };
-  loadDecisions();
-  refreshScenarios();
-}, []);
+  useEffect(() => {
+    const loadDecisions = async () => {
+      try {
+        const data = await getActiveDecisions();
+        if (Array.isArray(data)) {
+          setDecisions(data as unknown as Decision[]);
+        }
+      } catch (err) {
+        console.error("Failed to load decisions:", err);
+      }
+      setLoading(false);
+    };
+    loadDecisions();
+    refreshScenarios();
+  }, []);
 
 
-  // SAVE: Helper to sync state to DB
-  // src/app/pages/ScenarioBuilder.tsx
-
-const syncToDb = async (decisions: Decision | Decision[]) => {
-  try {
-    const decisionArray = Array.isArray(decisions) ? decisions : [decisions];
-    
-    for (const newDecision of decisionArray) {
-      const response = await fetch("http://localhost:8000/api/scenarios/decisions", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // If you have auth implemented:
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          scenario_id: activeScenarioId, // Ensure you have the current scenario ID
-          type: newDecision.type,
-          month: newDecision.startMonth,
-          payload: newDecision.impact // The backend expects 'payload'
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to sync decision');
-    }
-  } catch (error) {
-    console.error("Sync Error:", error);
-  }
-};
   const selectDecisionType = (type: string) => {
     const decision = decisionLibrary.find((entry) => entry.type === type);
     if (!decision) {
@@ -285,108 +264,77 @@ const syncToDb = async (decisions: Decision | Decision[]) => {
     setConfig((current) => ({ ...current, impact: decision.defaultImpact }));
   };
 
-// src/app/pages/ScenarioBuilder.tsx
+  // src/app/pages/ScenarioBuilder.tsx
 
-const addDecision = async () => {
-  if (!selectedType) return;
-  const def = decisionLibrary.find((d) => d.type === selectedType);
-  
-  // Map frontend state to the JSON structure the backend expects
-  const payload = {
-    type: selectedType,
-    name: def!.name,
-    impact: config.impact,
-    startMonth: config.startMonth, // Backend maps this to start_month
-    lag: config.lag,
-    ramp: config.ramp,
-    duration: config.duration
+  const addDecision = async () => {
+    if (!selectedType) return;
+    const def = decisionLibrary.find((d) => d.type === selectedType);
+
+    const payload = {
+      type: selectedType,
+      name: def!.name,
+      impact: config.impact,
+      startMonth: config.startMonth,
+      lag: config.lag,
+      ramp: config.ramp,
+      duration: config.duration,
+    };
+
+    try {
+      const savedDecision = await apiAddDecision(payload);
+      setDecisions([...decisions, { ...payload, id: String(savedDecision.id) }]);
+      setSelectedType(null);
+    } catch (error) {
+      console.error("Save Error:", error);
+    }
   };
 
-  try {
-    const res = await fetch("http://localhost:8000/api/scenarios/decisions", {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-      },
-      body: JSON.stringify(payload)
-    });
-    
-    if (!res.ok) throw new Error("Failed to save to DB");
-    const savedDecision = await res.json();
-    
-    // Use the ID returned from the database for the local state
-    setDecisions([...decisions, { ...payload, id: savedDecision.id.toString() }]);
-    setSelectedType(null);
-  } catch (error) {
-    console.error("Save Error:", error);
-  }
-};
-
-const deleteDecision = async (id: string) => {
-  try {
-    const res = await fetch(`http://localhost:8000/api/scenarios/decisions/${id}`, {
-      method: 'DELETE',
-      headers: { 
-        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-      }
-    });
-
-    if (res.ok) {
-      setDecisions(decisions.filter((d) => d.id !== id));
+  // Replace deleteDecisionFromEditor with this logic
+  const deleteDecision = async (id: string) => {
+    try {
+      await deleteDecisionById(id); // Correctly calls DELETE /api/scenarios/decisions/{id}
+      setDecisions(prev => prev.filter((d) => d.id !== id));
+      // IMPORTANT: Re-run simulation or refresh state here if needed
+    } catch (error) {
+      console.error("Delete Error:", error);
     }
-  } catch (error) {
-    console.error("Delete Error:", error);
-  }
-};
+  };
 
   // Quick Stress Test - Apply all three stress scenarios at once
-// src/app/pages/ScenarioBuilder.tsx
+  // src/app/pages/ScenarioBuilder.tsx
 
-const applyQuickStressTest = async () => {
-  const stressDecisions = stressLibrary.map((stress, index) => ({
-    type: stress.type,
-    name: stress.name,
-    impact: stress.defaultImpact,
-    startMonth: 1 + index * 2,
-    lag: 0,
-    ramp: 1,
-    duration: stress.duration,
-  }));
+  const applyQuickStressTest = async () => {
+    const stressDecisions = stressLibrary.map((stress, index) => ({
+      type: stress.type,
+      name: stress.name,
+      impact: stress.defaultImpact,
+      startMonth: 1 + index * 2,
+      lag: 0,
+      ramp: 1,
+      duration: stress.duration,
+    }));
 
-  const savedResults = [];
-  
-  for (const payload of stressDecisions) {
-    try {
-      const res = await fetch("http://localhost:8000/api/scenarios/decisions", {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}` 
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      if (res.ok) {
-        const saved = await res.json();
-        savedResults.push({ ...payload, id: saved.id.toString() });
+    const savedResults: Decision[] = [];
+
+    for (const payload of stressDecisions) {
+      try {
+        const saved = await apiAddDecision(payload);
+        savedResults.push({ ...payload, id: String(saved.id) });
+      } catch (error) {
+        console.error("Failed to sync stress test decision:", error);
       }
-    } catch (error) {
-      console.error("Failed to sync stress test decision:", error);
     }
-  }
 
-  setDecisions([...decisions, ...savedResults]);
-};
+    setDecisions([...decisions, ...savedResults]);
+  };
   // Add individual stress test
-  const addStressTest = (stressType: string) => {
-    const stress = stressLibrary.find((entry) => entry.type === stressType);
-    if (!stress) {
-      return;
-    }
+  // Inside ScenarioBuilder.tsx
 
-    const newDecision: Decision = {
-      id: `stress_${Date.now()}`,
+  const addStressTest = async (stressType: string) => {
+    const stress = stressLibrary.find((entry) => entry.type === stressType);
+    if (!stress) return;
+
+    const payload = {
       type: stress.type,
       name: stress.name,
       impact: stress.defaultImpact,
@@ -394,10 +342,14 @@ const applyQuickStressTest = async () => {
       lag: 0,
       ramp: 1,
       duration: stress.duration,
-      isStressTest: true,
     };
 
-    setDecisions((current) => [...current, newDecision]);
+    try {
+      const saved = await apiAddDecision(payload); // Persist to DB
+      setDecisions((current) => [...current, fromApiDecision(saved as any)]);
+    } catch (err) {
+      console.error("Failed to add stress test:", err);
+    }
   };
 
   const deleteDecisionFromEditor = (id: string) => {
@@ -579,9 +531,8 @@ const applyQuickStressTest = async () => {
                 <button
                   key={decision.type}
                   onClick={() => selectDecisionType(decision.type)}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${decision.color} ${
-                    selectedType === decision.type ? "ring-2 ring-blue-500" : ""
-                  }`}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${decision.color} ${selectedType === decision.type ? "ring-2 ring-blue-500" : ""
+                    }`}
                 >
                   <Icon className="w-6 h-6 mb-2" />
                   <div className="font-medium">{decision.name}</div>
@@ -708,7 +659,7 @@ const applyQuickStressTest = async () => {
           </Button>
         </CardHeader>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {stressLibrary.map((stress) => {
               const Icon = stress.icon;
               return (
@@ -783,7 +734,7 @@ const applyQuickStressTest = async () => {
                         </div>
                       </div>
                       <button
-                        onClick={() => deleteDecisionFromEditor(decision.id)}
+                        onClick={() => deleteDecision(decision.id)} // Change from deleteDecisionFromEditor to deleteDecision
                         className="p-2 hover:bg-red-900/30 rounded-lg transition-colors"
                         type="button"
                       >

@@ -23,7 +23,11 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { ChevronDown, ChevronUp, Loader2, Shield } from "lucide-react";
-import { runSimulation as callApi } from "../../services/simulationApi";
+import {
+  runSimulation as callApi,
+  getLatestSimulation,
+  deleteAllSimulationRuns,
+} from "../../services/simulationApi";
 
 
 interface FinancialInputs {
@@ -67,19 +71,7 @@ export function FinancialDashboard() {
     const fetchAndSimulate = async () => {
       setLoading(true);
       try {
-        const token = localStorage.getItem('token');
-
-        // 1. Fetch Latest Financial Inputs
-        const inputRes = await fetch("http://localhost:8000/api/simulation/latest", {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const inputData = await inputRes.json();
-
-        // 2. Fetch Active Scenario Events
-        const scenarioRes = await fetch("http://localhost:8000/api/scenarios/active", {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const scenarioData = await scenarioRes.json();
+        const inputData = await getLatestSimulation();
 
         if (inputData.inputs) {
           const savedInputs = {
@@ -91,8 +83,6 @@ export function FinancialDashboard() {
             payroll: inputData.inputs.payroll,
           };
           setInputs(savedInputs);
-
-          // 3. Run simulation with inputs
           runSimulation(savedInputs);
         }
       } catch (err) {
@@ -110,14 +100,8 @@ export function FinancialDashboard() {
 
     try {
       setLoading(true);
-      await fetch("http://localhost:8000/api/simulation-runs/all", {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      await deleteAllSimulationRuns();
 
-      // Reset local state to empty
       setInputs({
         startingCash: 0,
         monthlyRevenue: 0,

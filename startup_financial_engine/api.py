@@ -240,6 +240,8 @@ def simulate(
     from models.assumptions import StartupAssumptions
     from models.forecast import ForecastAssumptions
     from models.year_simulator import YearSimulator, apply_growth
+    from models.stress import StressTester
+    tester = StressTester()
 
     # 1. Map Assumptions
     base = StartupAssumptions(
@@ -386,6 +388,8 @@ def simulate(
         has_direct_event,
     )
 
+    mc_results = tester.monte_carlo(base, starting_cash, simulations=50)
+
     result_payload = {
         "user_email": current_user.email,
         "baseline": baseline_timeline,
@@ -401,6 +405,7 @@ def simulate(
         "resilience": resilience_summary,
         "risk_signals": risk_signals,
         "mitigation_suggestions": mitigation_suggestions,
+        "monte_carlo_outcomes": mc_results,
     }
 
     request_payload = request.dict()
@@ -548,59 +553,98 @@ def list_simulation_runs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # DELETE: Remove a specific run from the database
+    runs = (
+        db.query(SimulationRun)
+        .filter(SimulationRun.user_id == current_user.id)
+        .order_by(SimulationRun.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "scenario_id": r.scenario_id,
+            "inputs": r.inputs,
+            "result": r.result,
+            "created_at": r.created_at,
+        }
+        for r in runs
+    ]
+
+
+@app.delete("/api/simulation-runs/all", status_code=204)
+def delete_all_simulation_runs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db.query(SimulationRun).filter(
+        SimulationRun.user_id == current_user.id
+    ).delete()
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.delete("/api/simulation-runs/{run_id}", status_code=204)
+def delete_simulation_run(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     run = db.query(SimulationRun).filter(
-        SimulationRun.id == run_id, 
+        SimulationRun.id == run_id,
         SimulationRun.user_id == current_user.id
     ).first()
-    
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-        
     db.delete(run)
     db.commit()
-    return {"status": "deleted"}
-
-# startup_financial_engine/api.py
-from models.scenario import Scenario
-from models.scenario_decision import ScenarioDecision
-
-# startup_financial_engine/api.py
-
-# startup_financial_engine/api.py
+    return Response(status_code=204)
 
 @app.post("/api/scenarios/decisions")
-def add_decision(decision_data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def add_decision(
+    decision_data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
     if not scenario:
         scenario = Scenario(user_id=current_user.id, name="Active Scenario")
         db.add(scenario)
         db.commit()
         db.refresh(scenario)
-    
-    # Manually map keys from frontend (camelCase) to DB (snake_case)
+
     new_decision = ScenarioDecision(
         scenario_id=scenario.id,
-        type=decision_data['type'],
-        name=decision_data.get('name', decision_data['type']),
-        impact=float(decision_data['impact']),
-        start_month=int(decision_data['startMonth']),
-        lag_months=int(decision_data.get('lag', 0)),
-        ramp_months=int(decision_data.get('ramp', 1)),
-        duration_months=None if decision_data['duration'] == "permanent" else int(decision_data['duration'])
+        type=decision_data["type"],
+        name=decision_data.get("name", decision_data["type"]),
+        impact=float(decision_data["impact"]),
+        start_month=int(decision_data["startMonth"]),
+        lag_months=int(decision_data.get("lag", 0)),
+        ramp_months=int(decision_data.get("ramp", 1)),
+        duration_months=(
+            None if decision_data["duration"] == "permanent" else int(decision_data["duration"])
+        ),
     )
     db.add(new_decision)
     db.commit()
-    db.refresh(new_decision) 
-    return new_decision
+    db.refresh(new_decision)
+    return _serialize_decision(new_decision)
+
 
 @app.get("/api/scenarios/active/decisions")
-def get_active_decisions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
+def get_active_decisions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    scenario = (
+        db.query(Scenario)
+        .filter(Scenario.user_id == current_user.id)
+        .order_by(Scenario.updated_at.desc())
+        .first()
+    )
     if not scenario:
         return []
-        
-    # Map DB objects back to Frontend interface
+
     return [
         {
             "id": str(d.id),
@@ -610,39 +654,33 @@ def get_active_decisions(current_user: User = Depends(get_current_user), db: Ses
             "startMonth": d.start_month,
             "lag": d.lag_months,
             "ramp": d.ramp_months,
-            "duration": "permanent" if d.duration_months is None else str(d.duration_months)
-        } for d in scenario.decisions
+            "duration": "permanent" if d.duration_months is None else str(d.duration_months),
+        }
+        for d in scenario.decisions
     ]
-    scenario = db.query(Scenario).filter(Scenario.user_id == current_user.id).first()
-    
-    # payload mapping
-    new_decision = ScenarioDecision(
-        scenario_id=scenario.id,
-        type=decision_data['type'],
-        name=decision_data.get('name', 'New Decision'),
-        impact=float(decision_data['impact']),
-        start_month=int(decision_data['startMonth']), # Map frontend 'startMonth' to DB 'start_month'
-        lag_months=int(decision_data.get('lag', 0)),
-        ramp_months=int(decision_data.get('ramp', 1)),
-        duration_months=None if decision_data['duration'] == "permanent" else int(decision_data['duration'])
-    )
-    
-    db.add(new_decision)
-    db.commit()
-    db.refresh(new_decision)
-    return new_decision
+
 
 @app.delete("/api/scenarios/decisions/{decision_id}")
-def delete_decision(decision_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    decision = db.query(ScenarioDecision).join(Scenario).filter(
-        ScenarioDecision.id == decision_id, 
-        Scenario.user_id == current_user.id
-    ).first()
+def delete_decision(
+    decision_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    decision = (
+        db.query(ScenarioDecision)
+        .join(Scenario)
+        .filter(
+            ScenarioDecision.id == decision_id,
+            Scenario.user_id == current_user.id,
+        )
+        .first()
+    )
     if not decision:
         raise HTTPException(status_code=404, detail="Decision not found")
     db.delete(decision)
     db.commit()
     return {"message": "Deleted"}
+
 
 if __name__ == "__main__":
     import uvicorn
