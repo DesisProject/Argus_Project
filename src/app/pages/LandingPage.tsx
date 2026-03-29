@@ -10,6 +10,10 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Card, CardContent } from "../components/ui/card";
+import image1 from "../assets/image1.png";
+import image2 from "../assets/image2.png";
+import image3 from "../assets/image3.png";
+import image4 from "../assets/image4.png";
 
 export function LandingPage() {
   const navigate = useNavigate();
@@ -46,21 +50,25 @@ export function LandingPage() {
       step: 1,
       title: "Define Financial Baseline",
       description: "Input your starting cash, revenue, costs, and growth assumptions.",
+      image: image1,
     },
     {
       step: 2,
       title: "Add Business Decisions",
       description: "Layer in hiring, marketing, expansion, or other strategic moves.",
+      image: image2,
     },
     {
       step: 3,
       title: "Compare Outcomes Under Uncertainty",
       description: "See how different scenarios affect your runway and cash position.",
+      image: image3,
     },
     {
       step: 4,
       title: "View Risk Metrics & Mitigation",
       description: "Get resilience grades, insolvency risk, and actionable recommendations.",
+      image: image4,
     },
   ];
 
@@ -299,13 +307,12 @@ export function LandingPage() {
             </p>
           </div>
 
-          <div className="space-y-12">
+          <div className="space-y-24"> {/* Increased spacing for better visual flow */}
             {walkthrough.map((item, index) => (
               <div
                 key={index}
-                className={`flex items-center gap-12 ${
-                  index % 2 === 1 ? "flex-row-reverse" : ""
-                }`}
+                className={`flex items-center gap-12 ${index % 2 === 1 ? "flex-row-reverse" : ""
+                  }`}
               >
                 <div className="flex-1">
                   <div className="inline-block px-4 py-2 bg-blue-100 text-blue-700 rounded-full font-semibold text-sm mb-4">
@@ -320,19 +327,12 @@ export function LandingPage() {
                 </div>
 
                 <div className="flex-1">
-                  <div className="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
-                    <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                          <span className="text-2xl font-bold text-white">
-                            {item.step}
-                          </span>
-                        </div>
-                        <div className="text-sm text-slate-500">
-                          UI Preview
-                        </div>
-                      </div>
-                    </div>
+                  <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200 transition-transform hover:scale-[1.02]">
+                    <img
+                      src={item.image}
+                      alt={`${item.title} Screenshot`}
+                      className="w-full h-auto object-contain block"
+                    />
                   </div>
                 </div>
               </div>
@@ -395,7 +395,7 @@ export function LandingPage() {
             onClick={() => navigate('/signup')}
             className="bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white px-8 py-6 text-lg rounded-full shadow-lg"
           >
-            Start 
+            Start
             <ChevronRight className="w-5 h-5 ml-2" />
           </Button>
         </div>
