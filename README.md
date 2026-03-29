@@ -8,7 +8,6 @@ Argus is a full-stack financial simulation engine that stress-tests startup stra
 
 ## Table of Contents
 
-- [Project Summary](#project-summary)
 - [Problem Statement](#problem-statement)
 - [Solution Overview](#solution-overview)
 - [Tech Stack](#tech-stack)
@@ -289,3 +288,9 @@ Exposing the simulation engine as a REST API would allow integration with third-
 
 - UI components from [shadcn/ui](https://ui.shadcn.com/) — MIT License
 - Photos from [Unsplash](https://unsplash.com) — [Unsplash License](https://unsplash.com/license)
+
+---
+
+## Demo Video
+
+Drive Link: [link](https://drive.google.com/file/d/1Nw5tNmMNOWXtjcp8qUrLEiy7zBgPQ1w6/view?usp=sharing)
