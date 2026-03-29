@@ -39,6 +39,9 @@ Argus_Project/
 │   ├── database.py               # SQLAlchemy engine & session
 │   ├── main.py                   # Cash-flow metric calculations
 │   ├── event_calculators.py      # Event dispatcher for simulations
+│   ├── resilience.py             # Financial resilience grading logic (O, A, B, C, F)
+│   ├── risk_signals.py           # Runway and fragility detection
+│   ├── mitigation_engine.py      # Automated strategy generation
 │   ├── year_simulator.py         # Year-level simulation runner
 │   ├── models/                   # ORM & domain models
 │   │   ├── user.py
