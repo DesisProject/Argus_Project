@@ -148,12 +148,18 @@ Vite starts at `http://localhost:5173` and automatically proxies `/api/*` reques
 | `POST` | `/api/register` | — | Create a new user account |
 | `POST` | `/api/login` | — | Obtain a JWT access token |
 | `POST` | `/api/simulate` | 🔒 | Run a 3-year financial simulation |
+| `GET` | `/api/simulation/latest` | 🔒 | Get the latest simulation run |
+| `GET` | `/api/simulation-runs` | 🔒 | List past simulation runs |
+| `DELETE`| `/api/simulation-runs/all` | 🔒 | Delete all past simulation runs |
+| `DELETE`| `/api/simulation-runs/:id` | 🔒 | Delete a specific simulation run |
 | `GET` | `/api/scenarios` | 🔒 | List user's saved scenarios |
 | `POST` | `/api/scenarios` | 🔒 | Create a new scenario with decisions |
 | `GET` | `/api/scenarios/:id` | 🔒 | Get a single scenario |
 | `PUT` | `/api/scenarios/:id` | 🔒 | Update a scenario |
 | `DELETE`| `/api/scenarios/:id` | 🔒 | Delete a scenario |
-| `GET` | `/api/simulation-runs` | 🔒 | List past simulation runs |
+| `POST` | `/api/scenarios/decisions` | 🔒 | Add a decision to the active scenario |
+| `GET` | `/api/scenarios/active/decisions` | 🔒 | List decisions for the active scenario |
+| `DELETE`| `/api/scenarios/decisions/:id` | 🔒 | Delete a specific scenario decision |
 
 ---
 
