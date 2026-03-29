@@ -23,6 +23,8 @@ import {
   Users,
   Save,
   RefreshCw,
+  Package,
+  Cpu,
 } from "lucide-react";
 import {
   createScenario,
@@ -81,28 +83,14 @@ const decisionLibrary = [
     name: "Marketing Campaign",
     icon: Megaphone,
     defaultImpact: 10000,
-    color: "bg-green-900/30 border-green-600 hover:bg-green-900/50 text-green-300",
-  },
-  {
-    type: "demand",
-    name: "Demand Shock",
-    icon: TrendingDown,
-    defaultImpact: -20000,
-    color: "bg-red-900/30 border-red-600 hover:bg-red-900/50 text-red-300",
+    color: "bg-rose-900/30 border-rose-600 hover:bg-rose-900/50 text-rose-300",
   },
   {
     type: "reduce",
     name: "Reduce Costs",
     icon: DollarSign,
     defaultImpact: -8000,
-    color: "bg-green-900/30 border-green-600 hover:bg-green-900/50 text-green-300",
-  },
-  {
-    type: "fundraising",
-    name: "Delay Fundraising",
-    icon: Calendar,
-    defaultImpact: -25000,
-    color: "bg-amber-900/30 border-amber-600 hover:bg-amber-900/50 text-amber-300",
+    color: "bg-emerald-900/30 border-emerald-600 hover:bg-emerald-900/50 text-emerald-300",
   },
   {
     type: "expand",
@@ -110,6 +98,20 @@ const decisionLibrary = [
     icon: Target,
     defaultImpact: 15000,
     color: "bg-purple-900/30 border-purple-600 hover:bg-purple-900/50 text-purple-300",
+  },
+  {
+    type: "inventory",
+    name: "Optimize Inventory",
+    icon: Package,
+    defaultImpact: 10000,
+    color: "bg-amber-900/30 border-amber-600 hover:bg-amber-900/50 text-amber-300",
+  },
+  {
+    type: "automation",
+    name: "Automate Operations",
+    icon: Cpu,
+    defaultImpact: -15000,
+    color: "bg-cyan-900/30 border-cyan-600 hover:bg-cyan-900/50 text-cyan-300",
   },
 ];
 
