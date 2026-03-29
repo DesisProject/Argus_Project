@@ -151,10 +151,10 @@ export function ScenarioComparison() {
   };
 
   const getResilienceGrade = (runway: number, minCash: number) => {
-    if (runway >= 18 && minCash >= 0) return "A";
-    if (runway >= 12 && runway < 18) return "B";
-    if (runway >= 6 && runway < 12) return "C";
-    if (runway > 0 && runway < 6) return "D";
+    if (runway >= 36 && minCash >= 0) return "A"; // Base grade for full survival
+    if (runway >= 24) return "B";
+    if (runway >= 12) return "C";
+    if (runway > 0) return "D";
     return "F";
   };
 
@@ -204,25 +204,26 @@ export function ScenarioComparison() {
     {
       variant: "Baseline",
       ...baselineMetrics,
-      resilienceGrade: getResilienceGrade(baselineMetrics.runway, baselineMetrics.minCash),
+      // Use backend grade if it exists, otherwise use aligned local logic
+      resilienceGrade: simResult?.resilience?.baseline?.grade || getResilienceGrade(baselineMetrics.runway, baselineMetrics.minCash),
       delta: null,
     },
     {
       variant: "Best Case",
       ...bestMetrics,
-      resilienceGrade: getResilienceGrade(bestMetrics.runway, bestMetrics.minCash),
+      resilienceGrade: simResult?.resilience?.best?.grade || getResilienceGrade(bestMetrics.runway, bestMetrics.minCash),
       delta: null,
     },
     {
       variant: "Expected Case",
       ...expectedMetrics,
-      resilienceGrade: getResilienceGrade(expectedMetrics.runway, expectedMetrics.minCash),
+      resilienceGrade: simResult?.resilience?.expected?.grade || getResilienceGrade(expectedMetrics.runway, expectedMetrics.minCash),
       delta: { runway: runwayDelta, endingCash: endingCashDelta },
     },
     {
       variant: "Worst Case",
       ...worstMetrics,
-      resilienceGrade: getResilienceGrade(worstMetrics.runway, worstMetrics.minCash),
+      resilienceGrade: simResult?.resilience?.worst?.grade || getResilienceGrade(worstMetrics.runway, worstMetrics.minCash),
       delta: null,
     },
   ];
@@ -482,8 +483,8 @@ export function ScenarioComparison() {
                     <Badge
                       variant="outline"
                       className={
-                        row.resilienceGrade === "A" || row.resilienceGrade === "B"
-                          ? "bg-green-900/30 text-green-400 border-green-600"
+                        row.resilienceGrade === "O" || row.resilienceGrade === "A" || row.resilienceGrade === "B"
+                          ? "bg-emerald-900/30 text-emerald-400 border-emerald-600"
                           : row.resilienceGrade === "C"
                             ? "bg-amber-900/30 text-amber-400 border-amber-600"
                             : "bg-red-900/30 text-red-400 border-red-600"
@@ -503,7 +504,7 @@ export function ScenarioComparison() {
       <ResilienceScore
         minCashBalance={expectedMetrics.minCash}
         runwayMonths={expectedMetrics.runway}
-        grade={getResilienceGrade(expectedMetrics.runway, expectedMetrics.minCash)}
+        grade={simResult?.resilience?.expected?.grade}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
