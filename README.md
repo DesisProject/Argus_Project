@@ -1,8 +1,48 @@
 # Argus — Startup Financial Simulator
 
-Argus is a full-stack financial simulation platform for startups. It lets founders model revenue, expenses, and cash-flow over a 3-year horizon, build "what-if" scenarios with configurable decisions, and compare outcomes side-by-side — all behind a secure, per-user account.
+Argus is a full-stack financial simulation engine that stress-tests startup strategies across four parallel 3-year timelines — Baseline, Expected, Best Case, and Worst Case. Founders input their financial assumptions, layer in business decisions like hiring or marketing, and get back a resilience grade, runway forecast, and automated mitigation strategies — all behind a secure, per-user account.
 
 > **Design reference:** [Figma — App Design](https://www.figma.com/design/LvBrVgKLx6b82jpYRNVmrT/App-design)
+
+---
+
+## Table of Contents
+
+- [Project Summary](#project-summary)
+- [Problem Statement](#problem-statement)
+- [Solution Overview](#solution-overview)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+- [API Endpoints](#api-endpoints)
+- [Frontend Pages](#frontend-pages)
+- [Environment Variables](#environment-variables)
+- [Docker Compose](#docker-compose-full-stack)
+- [UI Previews](#ui-previews)
+- [Future Scope](#future-scope)
+- [References](#references)
+- [Attributions](#attributions)
+
+---
+
+## Problem Statement
+
+Most early-stage startups rely on static spreadsheets that fail to account for optimism bias or the compounding impact of individual business decisions. When a marketing campaign underperforms or a hiring plan runs over budget, founders have no way to anticipate the downstream effect on cash flow — leading to unexpected runway exhaustion and avoidable failure.
+
+---
+
+## Solution Overview
+
+Argus replaces single-path projections with parallel 36-month simulations. Business events like hiring, marketing, and expansion are applied with standardized cost and timing assumptions across every scenario, removing guesswork. The engine then returns a resilience grade and risk signals so founders can see the consequences of a decision before committing capital.
+
+- **Multi-Scenario Branching**: simultaneously generates four parallel 36-month financial timelines (Baseline, Expected, Best Case, Worst Case) to evaluate varying risk levels
+- **Event Simulation Engine**: mathematically calculates the impact of business events such as marketing campaigns, hiring, and capital expansion on the overall financial ledger
+- **Standardized Event Assumptions**: applies consistent backend-defined assumptions for event timing, cash burn, delayed revenue impact, and scenario branching to reduce optimism bias
+- **Resilience Scoring**: computes a standardized resilience grade (O / A / B / C / F) from simulated cash behaviour, including runway duration, insolvency timing, and cash stability
+- **Automated Mitigation Strategies**: surfaces actionable recovery recommendations when risk signals such as critical runway or sustained negative cash flow are detected
+- **Interactive Dashboard**: dynamic charts track cash balances, net income, and revenue trajectories across all simulated timelines with side-by-side scenario comparison
+- **Secure Per-User Accounts**: JWT-based authentication ensures each founder's scenarios and simulation history are private and persisted across sessions
 
 ---
 
@@ -88,7 +128,7 @@ cd Argus_Project
 **Option A — Docker Compose (recommended)**
 
 ```bash
-docker-compose up -d db
+docker compose up -d db
 ```
 
 This spins up PostgreSQL 15 on `localhost:5432` with:
@@ -198,6 +238,50 @@ docker-compose up -d
 ```
 
 The app container exposes port **8000** and automatically connects to the `db` service.
+
+---
+
+## UI Previews
+
+### Step 1: Define Financial Baseline
+Input your starting cash, revenue, costs, and growth assumptions through the Financial Model Dashboard.
+<p align="center">
+  <img src="src/app/assets/image1.png" width="80%" />
+</p>
+
+### Step 2: Add Business Decisions
+Layer in hiring, marketing, expansion, or other strategic moves using the Decision Library.
+<p align="center">
+  <img src="src/app/assets/image2.png" width="80%" />
+</p>
+
+### Step 3: Compare Outcomes Under Uncertainty
+See how different scenarios affect your runway and cash position across the Baseline, Expected, Best Case, and Worst Case timelines.
+<p align="center">
+  <img src="src/app/assets/image3.png" width="80%" />
+</p>
+
+### Step 4: View Risk Metrics & Mitigation
+Get resilience grades (O / A / B / C / F), insolvency risk signals, and actionable automated recommendations.
+<p align="center">
+  <img src="src/app/assets/image4.png" width="80%" />
+</p>
+
+---
+
+## Future Scope
+
+### 1. AI-Based Financial Advisory
+The system can be extended with an AI-driven advisory layer to provide insights, risk analysis, and strategic recommendations based on simulation outputs. This would enable natural language interaction and automated interpretation of financial results.
+
+### 2. Automated Data Extraction
+The platform can incorporate document processing capabilities to automatically extract financial assumptions from pitch decks, bank statements, and P&L sheets, reducing manual input.
+
+### 3. Advanced Risk Modelling
+Enhancements such as correlated Monte Carlo simulations can be introduced to model realistic dependencies between revenue and cost variables, improving prediction accuracy.
+
+### 4. API Integration
+Exposing the simulation engine as a REST API would allow integration with third-party financial tools and services.
 
 ---
 
