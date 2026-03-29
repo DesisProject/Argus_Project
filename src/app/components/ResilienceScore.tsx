@@ -18,10 +18,10 @@ export function ResilienceScore({
     runway: number,
     minCash: number
   ): string => {
-    if (runway >= 18 && minCash >= 0) return "A";
-    if (runway >= 12 && runway < 18) return "B";
-    if (runway >= 6 && runway < 12) return "C";
-    if (runway > 0 && runway < 6) return "D";
+    if (runway >= 36 && minCash >= 0) return "A"; // 'O' usually requires burn data
+    if (runway >= 24) return "B";
+    if (runway >= 12) return "C";
+    if (runway > 0) return "D";
     return "F";
   };
 
@@ -30,6 +30,16 @@ export function ResilienceScore({
   // Grade styling
   const getGradeStyles = (grade: string) => {
     switch (grade) {
+      case "O": // Add this case for Outstanding
+      return {
+        bg: "bg-purple-500",
+        text: "text-purple-400",
+        border: "border-purple-500",
+        ring: "ring-purple-500/20",
+        label: "Outstanding",
+        icon: Shield,
+        description: "Survives full horizon with a strong cash cushion",
+      };
       case "A":
         return {
           bg: "bg-green-500",
@@ -38,7 +48,7 @@ export function ResilienceScore({
           ring: "ring-green-500/20",
           label: "Excellent",
           icon: Shield,
-          description: "Strong financial position with solid runway",
+          description: "Strong financial position with ample runway",
         };
       case "B":
         return {
@@ -99,18 +109,13 @@ export function ResilienceScore({
   // Calculate progress percentage for visual display
   const getProgressPercentage = (grade: string) => {
     switch (grade) {
-      case "A":
-        return 100;
-      case "B":
-        return 80;
-      case "C":
-        return 60;
-      case "D":
-        return 40;
-      case "F":
-        return 20;
-      default:
-        return 0;
+      case "O": return 100;
+    case "A": return 90;
+    case "B": return 75;
+    case "C": return 60;
+    case "D": return 40;
+    case "F": return 20;
+    default: return 0;
     }
   };
 
@@ -190,9 +195,8 @@ export function ResilienceScore({
               <div>
                 <div className="text-sm text-slate-400 mb-1">Min Cash</div>
                 <div
-                  className={`text-2xl font-semibold ${
-                    minCashBalance < 0 ? "text-red-400" : styles.text
-                  }`}
+                  className={`text-2xl font-semibold ${minCashBalance < 0 ? "text-red-400" : styles.text
+                    }`}
                 >
                   ${minCashBalance >= 0 ? (minCashBalance / 1000).toFixed(0) : minCashBalance.toLocaleString()}
                   {minCashBalance >= 0 ? "k" : ""}

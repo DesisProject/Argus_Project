@@ -48,6 +48,18 @@ interface MonthData {
   burn: number;
 }
 
+// const getGradeStyles = (grade: string) => {
+//   const styleMap: Record<string, { text: string; bg: string; label: string; description: string }> = {
+//     O: { text: "text-emerald-400", bg: "bg-emerald-900", label: "Optimal", description: "Your business is thriving with strong financial health." },
+//     A: { text: "text-green-400", bg: "bg-green-900", label: "Excellent", description: "Your business has excellent financial resilience." },
+//     B: { text: "text-blue-400", bg: "bg-blue-900", label: "Good", description: "Your business has good financial health." },
+//     C: { text: "text-yellow-400", bg: "bg-yellow-900", label: "Fair", description: "Your business has fair financial health. Consider cost optimization." },
+//     D: { text: "text-orange-400", bg: "bg-orange-900", label: "Poor", description: "Your business has limited runway. Action needed soon." },
+//     F: { text: "text-red-400", bg: "bg-red-900", label: "Critical", description: "Your business is at critical risk. Immediate action required." },
+//   };
+//   return styleMap[grade] || styleMap.F;
+// };
+
 export function FinancialDashboard() {
   const [inputs, setInputs] = useState<FinancialInputs>({
     startingCash: 0,
@@ -200,39 +212,43 @@ export function FinancialDashboard() {
   };
   // Inside src/app/pages/FinancialDashboard.tsx
 
-  const getResilienceMetrics = () => {
-    if (simulationData.length === 0) return null;
+  // src/app/pages/FinancialDashboard.tsx
 
-    // Calculate Minimum Cash across the 24-36 month period
-    const minCash = Math.min(...simulationData.map(d => d.cash));
+// src/app/pages/FinancialDashboard.tsx
 
-    // Logic matches the reference screenshot: A, Excellent, 24+ mo, etc.
-    let grade = "F";
-    let label = "Critical";
-    let color = "text-red-500 border-red-500/50 bg-red-500/10";
-    let description = "High risk of insolvency. Immediate action required.";
+// const getResilienceMetrics = () => {
+//   if (simulationData.length === 0) return null;
 
-    if (runwayMonths >= 24 && minCash > 100000) {
-      grade = "A";
-      label = "Excellent";
-      color = "text-emerald-500 border-emerald-500/50 bg-emerald-500/10";
-      description = "Strong financial position with solid runway";
-    } else if (runwayMonths > 12) {
-      grade = "B";
-      label = "Good";
-      color = "text-blue-500 border-blue-500/50 bg-blue-500/10";
-      description = "Healthy runway with manageable risk levels";
-    } else if (runwayMonths >= 6) {
-      grade = "C";
-      label = "Fair";
-      color = "text-amber-500 border-amber-500/50 bg-amber-500/10";
-      description = "Moderate risk. Plan for fundraising or cost reduction.";
-    }
+//   const minCash = Math.min(...simulationData.map(d => d.cash));
+//   const avgBurn = simulationData.reduce((acc, d) => acc + (d.burn || 0), 0) / simulationData.length;
+//   const cashCushion = avgBurn > 0 ? minCash / avgBurn : 36;
+//   const horizon = simulationData.length; // 36 months
 
-    return { grade, label, color, description, minCash };
-  };
+//   let grade = "F";
+//   // Apply exactly the same logic as startup_financial_engine/resilience.py
+//   if (runwayMonths >= horizon && minCash >= 0) {
+//     grade = (avgBurn === 0 || cashCushion >= 12) ? "O" : "A";
+//   } else if (runwayMonths >= 24) {
+//     grade = "B";
+//   } else if (runwayMonths >= 12) {
+//     grade = "C";
+//   } else if (runwayMonths > 0) {
+//     grade = "D";
+//   }
 
-  const metrics = getResilienceMetrics();
+//   // Use the helper to get styles (or move style logic to a shared util)
+//   const styles = getGradeStyles(grade); 
+
+//   return { 
+//     grade, 
+//     label: styles.label, 
+//     color: `${styles.text} border-${styles.bg.split('-')[1]}-500/50 ${styles.bg}/10`, 
+//     description: styles.description, 
+//     minCash 
+//   };
+// };
+
+  // const metrics = getResilienceMetrics();
 
   return (
     <div className="space-y-6">
@@ -471,56 +487,7 @@ export function FinancialDashboard() {
             </Card>
           )}
 
-          {/* Resilience Score Section */}
-          {metrics && (
-            <Card className="bg-slate-900/50 border-slate-800">
-              <CardHeader className="flex flex-row items-center gap-2 pb-2">
-                <Shield className="w-5 h-5 text-blue-400" />
-                <CardTitle className="text-lg font-medium text-slate-100">Resilience Score</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row items-center gap-8 py-4">
-                  {/* Circular Grade Display */}
-                  <div className="relative flex items-center justify-center">
-                    <div className={`w-32 h-32 rounded-full border-8 flex flex-col items-center justify-center ${metrics.color.split(' ')[1]}`}>
-                      <span className="text-4xl font-bold">{metrics.grade}</span>
-                      <span className="text-[10px] uppercase tracking-wider opacity-70">{metrics.label}</span>
-                    </div>
-                    {/* Outer glow ring matching screenshot */}
-                    <div className={`absolute inset-[-8px] rounded-full border-2 opacity-20 blur-sm ${metrics.color.split(' ')[1]}`} />
-                  </div>
-
-                  {/* Details and KPI stats */}
-                  <div className="flex-1 space-y-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Shield className="w-4 h-4 text-emerald-500" />
-                        <span>{metrics.description}</span>
-                      </div>
-                      <Badge className={`${metrics.color} border font-normal`}>
-                        {metrics.label} Resilience
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-8 pt-4 border-t border-slate-800">
-                      <div>
-                        <div className="text-sm text-slate-500 mb-1">Runway</div>
-                        <div className={`text-2xl font-bold ${metrics.color.split(' ')[0]}`}>
-                          {runwayMonths === 24 ? "24+ mo" : `${runwayMonths} mo`}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm text-slate-500 mb-1">Min Cash</div>
-                        <div className={`text-2xl font-bold ${metrics.color.split(' ')[0]}`}>
-                          ${(metrics.minCash / 1000).toFixed(0)}k
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          
 
           {/* Monthly Data Table */}
           {simulationData.length > 0 && (
